@@ -1,11 +1,16 @@
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Any
+
+from ..core.transformations import TransformationCandidate
 from ..core.universe import Universe
-from ..core.transformation import TransformationCandidate
-from ..reasoning.rule_based import RuleBasedReasoner
+from ..reasoning.base import Reasoner
 from ..reasoning.llm_adapter import LLMAdapter
 from ..reasoning.mythos_adapter import MythosAdapter
+from ..reasoning.rule_based import RuleBasedReasoner
+from ..utils.metrics import tokenize
+
 
 @dataclass
 class CapabilityCard:
@@ -20,26 +25,60 @@ class CapabilityCard:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 class CapabilityRouter:
-    def __init__(self):
-        self.reasoners = {
+    """Routes goals to reasoners by consulting the capability registry.
+
+    Each card advertises strength keywords and names its reasoner in
+    metadata; routing matches the plan-step task hint (or goal tokens)
+    against those strengths instead of hardcoded branches.
+    """
+
+    def __init__(self, extra_reasoners: dict[str, Reasoner] | None = None):
+        self.reasoners: dict[str, Reasoner] = {
             "rule": RuleBasedReasoner(),
             "llm": LLMAdapter(),
             "mythos": MythosAdapter(),
         }
-        self.registry = {
-            "reasoning": CapabilityCard("rule", "reasoner", ["planning", "updates", "retrieval"], ["goal"], ["candidate"]),
-            "formal": CapabilityCard("smt", "solver", ["validity", "admissibility"], ["constraints"], ["sat_model"]),
-            "memory": CapabilityCard("memory_graph", "store", ["retrieval", "compression"], ["entities"], ["context"]),
+        if extra_reasoners:
+            self.reasoners.update(extra_reasoners)
+        self.registry: dict[str, CapabilityCard] = {
+            "reasoning": CapabilityCard(
+                "rule", "reasoner",
+                ["plan", "create", "update", "merge", "relate", "query", "retrieval"],
+                ["goal"], ["candidate"], cost="low", latency="low",
+                metadata={"reasoner": "rule"},
+            ),
+            "research": CapabilityCard(
+                "llm", "reasoner",
+                ["research", "find", "search", "compare", "summarize"],
+                ["goal"], ["candidate"], cost="high", latency="high",
+                metadata={"reasoner": "llm"},
+            ),
+            "engineering": CapabilityCard(
+                "mythos", "reasoner",
+                ["code", "program", "build", "implement", "execute"],
+                ["goal"], ["candidate"], cost="high", latency="medium",
+                metadata={"reasoner": "mythos"},
+            ),
         }
+        self.default_card = "reasoning"
 
-    def route(self, goal: str, universe: Universe, active_entity_ids: list[str]) -> list[TransformationCandidate]:
-        goal_l = goal.lower()
-        if any(k in goal_l for k in ["verify", "valid", "constraint", "proof"]):
-            reasoner = self.reasoners["rule"]
-        elif any(k in goal_l for k in ["code", "program", "build"]):
-            reasoner = self.reasoners["mythos"]
-        elif any(k in goal_l for k in ["research", "find", "search"]):
-            reasoner = self.reasoners["llm"]
-        else:
-            reasoner = self.reasoners["rule"]
+    def select_card(self, goal: str, task_hint: str | None = None) -> CapabilityCard:
+        terms = {task_hint.lower()} if task_hint else set()
+        terms |= tokenize(goal)
+        best, best_matches = None, 0
+        for card in self.registry.values():
+            matches = len(terms & set(card.strengths))
+            if matches > best_matches:
+                best, best_matches = card, matches
+        return best or self.registry[self.default_card]
+
+    def route(
+        self,
+        goal: str,
+        universe: Universe,
+        active_entity_ids: list[str],
+        task_hint: str | None = None,
+    ) -> list[TransformationCandidate]:
+        card = self.select_card(goal, task_hint)
+        reasoner = self.reasoners.get(card.metadata.get("reasoner", "rule"), self.reasoners["rule"])
         return reasoner.propose(goal, universe, active_entity_ids)

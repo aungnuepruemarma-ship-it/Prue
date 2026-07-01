@@ -1,7 +1,11 @@
 from __future__ import annotations
+
+import copy
 from dataclasses import dataclass, field
 from typing import Any
+
 from .entity import Entity
+
 
 @dataclass
 class Relation:
@@ -28,12 +32,10 @@ class Universe:
     version: int = 1
 
     def clone(self) -> "Universe":
-        return Universe(
-            entities={k: Entity(**v.to_dict()) for k, v in self.entities.items()},
-            relations=[Relation(**r.to_dict()) for r in self.relations],
-            history=[dict(item) for item in self.history],
-            version=self.version,
-        )
+        # Must be a deep copy: constraint checking and objective scoring
+        # trial-apply candidates on clones, and any shared nested dict would
+        # let validation mutate live state.
+        return copy.deepcopy(self)
 
     def add_entity(self, entity: Entity) -> None:
         self.entities[entity.id] = entity
@@ -51,7 +53,19 @@ class Universe:
             "note": note,
             "entities": [e.to_dict() for e in self.entities.values()],
             "relations": [r.to_dict() for r in self.relations],
+            "history": copy.deepcopy(self.history),
         }
+
+    @classmethod
+    def from_snapshot(cls, data: dict[str, Any]) -> "Universe":
+        data = copy.deepcopy(data)
+        u = cls(version=data.get("version", 1))
+        for e in data.get("entities", []):
+            u.add_entity(Entity(**e))
+        for r in data.get("relations", []):
+            u.add_relation(Relation(**r))
+        u.history = data.get("history", [])
+        return u
 
     def record_history(self, event: dict[str, Any]) -> None:
         self.history.append(event)

@@ -1,6 +1,8 @@
 from __future__ import annotations
+
+from ..core.transformations import TransformationCandidate
 from ..core.universe import Universe
-from ..core.transformation import TransformationCandidate
+
 
 class Executor:
     def execute(self, universe: Universe, candidate: TransformationCandidate) -> Universe:

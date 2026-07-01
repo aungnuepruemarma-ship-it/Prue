@@ -2,6 +2,8 @@
 
 *Prioritized, concrete fixes derived from `ANALYSIS.md` (verified findings) and `RESEARCH.md` (borrowable ideas). Effort estimates: S < 1h, M = half-day, L = multi-day.*
 
+> **Status:** All P0 items, all P1 items (with stubs implemented and wired in rather than deleted, plus a declarative Φ without the optional Z3 backend), and all P2 items were implemented after this document was written. The remaining open ideas are the optional Z3 encoding (P1.6 second step) and ACT-R-style activation decay beyond the recency bonus that was added (P2.4).
+
 ## P0 — Correctness (the loop currently violates its own invariants)
 
 ### P0.1 Make `Universe.clone` a deep copy — fixes the validation-mutates-state bug (S)

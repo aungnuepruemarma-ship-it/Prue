@@ -1,9 +1,18 @@
 from __future__ import annotations
+
 from collections import Counter
+
 from ..core.universe import Universe
+from ..research.engine import ResearchFinding
+
 
 class CuriosityEngine:
-    def suggest_next_goal(self, universe: Universe, events: list[dict]) -> str:
+    def suggest_next_goal(
+        self,
+        universe: Universe,
+        events: list[dict],
+        findings: list[ResearchFinding] | None = None,
+    ) -> str:
         if not events:
             return "explore current memory"
         candidates = Counter()
@@ -15,4 +24,6 @@ class CuriosityEngine:
         if candidates:
             top = candidates.most_common(1)[0][0]
             return f"research {top}"
+        if findings:
+            return f"research {findings[-1].concept} further"
         return "inspect memory graph"

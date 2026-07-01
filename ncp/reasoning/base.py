@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
+
+from ..core.transformations import TransformationCandidate
 from ..core.universe import Universe
-from ..core.transformation import TransformationCandidate
+
 
 class Reasoner(ABC):
     @abstractmethod

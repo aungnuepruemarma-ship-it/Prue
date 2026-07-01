@@ -1,35 +1,44 @@
 from __future__ import annotations
-from dataclasses import dataclass, field, asdict
+
+from dataclasses import dataclass, field
 from typing import Any
+
 from ..core.universe import Universe
+from ..graph.graph import Graph
 
-@dataclass
-class GraphNode:
-    id: str
-    label: str
-    data: dict[str, Any] = field(default_factory=dict)
-
-@dataclass
-class GraphEdge:
-    source: str
-    target: str
-    relation: str
-    data: dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class MemoryGraph:
-    nodes: dict[str, GraphNode] = field(default_factory=dict)
-    edges: list[GraphEdge] = field(default_factory=list)
+    """Semantic view of the universe plus episodic events, backed by Graph."""
+
+    graph: Graph = field(default_factory=Graph)
+
+    @property
+    def nodes(self) -> dict[str, dict[str, Any]]:
+        return self.graph.nodes
+
+    @property
+    def edges(self) -> list[tuple[str, str, str]]:
+        return self.graph.edges
 
     def ingest_universe(self, universe: Universe) -> None:
-        self.nodes.clear()
-        self.edges.clear()
+        events = [(nid, data) for nid, data in self.graph.nodes.items() if nid.startswith("event_")]
+        self.graph.clear()
         for eid, entity in universe.entities.items():
-            self.nodes[eid] = GraphNode(id=eid, label=entity.name, data=entity.to_dict())
+            self.graph.add_node(eid, {"label": entity.name, "entity": entity.to_dict()})
         for rel in universe.relations:
-            self.edges.append(GraphEdge(source=rel.source, target=rel.target, relation=rel.relation_type, data=rel.to_dict()))
+            self.graph.add_edge(rel.source, rel.target, rel.relation_type)
+        for nid, data in events:
+            self.graph.add_node(nid, data)
 
     def ingest_history(self, events: list[dict[str, Any]]) -> None:
         for idx, event in enumerate(events):
             nid = f"event_{idx}"
-            self.nodes[nid] = GraphNode(id=nid, label=event.get("candidate", event.get("op", "event")), data=event)
+            label = event.get("candidate", event.get("op", "event"))
+            self.graph.add_node(nid, {"label": label, "event": event})
+
+    def related_entities(self, entity_id: str) -> list[str]:
+        return [n for n in self.graph.neighbors(entity_id) if not n.startswith("event_")]
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.graph.to_dict()

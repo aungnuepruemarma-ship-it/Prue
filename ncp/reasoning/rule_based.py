@@ -1,8 +1,9 @@
 from __future__ import annotations
-from .base import Reasoner
+
+from ..core.transformations import TransformationCandidate, make_add_relation, make_create_entity, make_merge_entities, make_update_entity
 from ..core.universe import Universe
-from ..core.transformation import TransformationCandidate
-from ..core.transformations import make_create_entity, make_update_entity, make_add_relation, make_merge_entities
+from .base import Reasoner
+
 
 class RuleBasedReasoner(Reasoner):
     def propose(self, goal: str, universe: Universe, active_entity_ids: list[str]) -> list[TransformationCandidate]:

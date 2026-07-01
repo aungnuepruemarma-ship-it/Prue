@@ -1,7 +1,20 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
+
 from collections import Counter
+from dataclasses import dataclass, field
 from typing import Any
+
+from .history import ngrams_from_events
+
+
+def successful_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep only events from successful traces.
+
+    Runtime events carry a status; universe op-events (no status key) are only
+    recorded when a transformation actually committed, so they count as
+    successful too.
+    """
+    return [e for e in events if e.get("status", "accepted") == "accepted"]
 
 @dataclass
 class Skill:
@@ -28,17 +41,20 @@ class SkillLibrary:
         } for name, skill in self.skills.items()}
 
     def update_from_history(self, events: list[dict[str, Any]]) -> None:
-        pass
+        """Refresh support counts (and bump versions) for known skills."""
+        grams = Counter(ngrams_from_events(successful_events(events)))
+        for skill in self.skills.values():
+            support = grams.get(skill.pattern, 0)
+            if support > skill.metadata.get("support", 0):
+                skill.metadata["support"] = support
+                skill.version += 1
 
 @dataclass
 class SkillExtractor:
     threshold: int = 2
 
     def promote(self, library: SkillLibrary, events: list[dict[str, Any]]) -> None:
-        ops = [e.get("candidate") or e.get("op") for e in events if (e.get("candidate") or e.get("op"))]
-        if len(ops) < 2:
-            return
-        grams = Counter(tuple(ops[i:i+2]) for i in range(len(ops)-1))
+        grams = Counter(ngrams_from_events(successful_events(events)))
         for pattern, count in grams.items():
             if count >= self.threshold:
                 name = "skill_" + "_".join(pattern)

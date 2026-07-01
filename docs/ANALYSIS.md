@@ -2,6 +2,8 @@
 
 *An architecture and code-quality deep-dive of the NCP (Nexus Computing Platform) reference implementation, as of commit `de846b1`.*
 
+> **Status:** This document describes the codebase as originally imported. Every bug and design flaw identified below (§7) has since been fixed, and the stub modules (§3) have been implemented and wired into the runtime — see `IMPROVEMENT_ROADMAP.md` for the item-by-item status.
+
 ## 1. Overview
 
 NCP is a ~950-line, pure-stdlib Python package (no third-party dependencies) that implements a goal-driven orchestration loop: a goal string flows through activation, routing, candidate generation, a constraint gate (Φ), objective scoring, execution, and memory/skill updates, with JSON persistence after every step.

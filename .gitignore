@@ -6,6 +6,9 @@ __pycache__/
 build/
 dist/
 
+# Generated runtime artifacts
+ncp_output/
+
 # Test / tooling caches
 .pytest_cache/
 .mypy_cache/
