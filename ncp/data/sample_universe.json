@@ -1,0 +1,18 @@
+{
+  "entities": [
+    {
+      "id": "e_root",
+      "type": "goal",
+      "name": "root",
+      "state": {"status": "seed"},
+      "knowledge": {"seed": true},
+      "confidence": 0.9,
+      "cost": 1.0,
+      "version": 1,
+      "metadata": {}
+    }
+  ],
+  "relations": [],
+  "history": [],
+  "version": 1
+}

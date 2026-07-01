@@ -1,0 +1,91 @@
+{
+  "nodes": [
+    {
+      "id": "e_root",
+      "label": "root",
+      "data": {
+        "id": "e_root",
+        "type": "goal",
+        "name": "root",
+        "state": {
+          "status": "seed",
+          "last_goal": "research a better way to route capabilities"
+        },
+        "knowledge": {
+          "seed": true,
+          "goal": "research a better way to route capabilities"
+        },
+        "confidence": 0.9,
+        "cost": 1.0,
+        "version": 4,
+        "metadata": {}
+      }
+    },
+    {
+      "id": "e_mem",
+      "label": "short_term",
+      "data": {
+        "id": "e_mem",
+        "type": "memory",
+        "name": "short_term",
+        "state": {
+          "tier": "working"
+        },
+        "knowledge": {
+          "entries": 1
+        },
+        "confidence": 0.7,
+        "cost": 1.0,
+        "version": 1,
+        "metadata": {}
+      }
+    },
+    {
+      "id": "event_0",
+      "label": "update_entity",
+      "data": {
+        "goal": "create a new concept and connect memory",
+        "candidate": "update_entity",
+        "status": "accepted",
+        "score": 1.7,
+        "explanation": "All constraints satisfied."
+      }
+    },
+    {
+      "id": "event_1",
+      "label": "update_entity",
+      "data": {
+        "goal": "update the active memory with a useful pattern",
+        "candidate": "update_entity",
+        "status": "accepted",
+        "score": 1.7,
+        "explanation": "All constraints satisfied."
+      }
+    },
+    {
+      "id": "event_2",
+      "label": "update_entity",
+      "data": {
+        "goal": "research a better way to route capabilities",
+        "candidate": "update_entity",
+        "status": "accepted",
+        "score": 1.7,
+        "explanation": "All constraints satisfied."
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "e_root",
+      "target": "e_mem",
+      "relation": "activates",
+      "data": {
+        "source": "e_root",
+        "target": "e_mem",
+        "relation_type": "activates",
+        "weight": 1.0,
+        "metadata": {}
+      }
+    }
+  ]
+}
