@@ -111,6 +111,77 @@ def test_kernel_nodes_carry_platform_annotations(tmp_path):
         kernel.shutdown()
 
 
+def test_kernel_attaches_provenance(tmp_path):
+    """Every committed memory gets a persisted, audited provenance record."""
+    kernel = make_kernel(tmp_path)
+    try:
+        kernel.submit("update the index")
+        assert kernel.lineage.entries, "lineage recorded per committed memory"
+        assert kernel.audit.get_entries(action="memory.commit"), "audit trail written"
+        provenance_dir = kernel.storage.root / "provenance"
+        assert any(provenance_dir.glob("*.json")), "provenance records persisted"
+        committed = [m for m in kernel.memory.working.get_all()
+                     if getattr(m, "provenance_id", None) is not None]
+        assert committed, "memory items carry their provenance_id"
+    finally:
+        kernel.shutdown()
+
+
+def test_kernel_compresses_checkpoints(tmp_path):
+    kernel = make_kernel(tmp_path)
+    try:
+        kernel.submit("update the index")
+        compressed = kernel.storage.artifacts.list_artifacts("checkpoints_compressed")
+        assert compressed, "compressed checkpoint artifacts saved"
+        assert kernel.compression.statistics.total_compressions >= 1
+        summaries = kernel.storage.artifacts.list_artifacts("run_summaries")
+        assert summaries, "per-run summary artifact saved"
+    finally:
+        kernel.shutdown()
+
+
+def test_kernel_startup_report_and_auto_resume(tmp_path):
+    """A kernel booted over an interrupted run self-heals without a manual resume."""
+    kernel = make_kernel(tmp_path, auto_resume=False)
+    try:
+        dag = kernel.compiler.compile("research routing, then update the index", kernel.runtime.universe)
+        order = dag.topological_order()
+        order[0].status = "completed"
+        order[0].result = {"status": "accepted", "verification": {"approved": True, "confidence": 0.9}}
+        order[1].status = "running"
+        kernel.checkpoints.checkpoint(dag)
+    finally:
+        kernel.shutdown()
+
+    reborn = make_kernel(tmp_path)  # auto_resume defaults to True
+    try:
+        assert dag.run_id in reborn.startup_report["interrupted_runs"]
+        assert reborn.startup_report["diagnoses"][0]["resumable"]
+        resumed = {r["run_id"]: r["status"] for r in reborn.startup_report["auto_resumed"]}
+        assert resumed.get(dag.run_id) == "completed"
+        assert "recovered start" in reborn.startup_report_summary()
+        # and the run really is finished now, not just reported as such
+        assert not reborn.crash_recovery.interrupted_runs()
+    finally:
+        reborn.shutdown()
+
+
+def test_kernel_vector_memory_survives_restart(tmp_path):
+    kernel = make_kernel(tmp_path)
+    try:
+        kernel.submit("update the index")
+        stored_keys = set(kernel.memory.vectors.vectors)
+        assert stored_keys, "node memories were embedded"
+    finally:
+        kernel.shutdown()
+
+    reborn = make_kernel(tmp_path)
+    try:
+        assert stored_keys <= set(reborn.memory.vectors.vectors), "embeddings reloaded from storage"
+    finally:
+        reborn.shutdown()
+
+
 def test_resource_manager_limits():
     from ncp.kernel.resource_manager import ResourceManager
 

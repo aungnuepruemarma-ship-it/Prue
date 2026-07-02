@@ -26,6 +26,17 @@ TARGETS = [
     ("ncp.runtime.executor", "Executor", "execute"),
     ("ncp.constraints.solver", "ConstraintSolver", "validate"),
     ("ncp.simulator.simulator", "Simulator", "simulate"),
+    # Chunk 2 — provenance, compression, recovery, storage sub-stores, vectors
+    ("ncp.provenance.lineage", "LineageTracker", "record"),
+    ("ncp.provenance.audit", "AuditTrail", "log"),
+    ("ncp.compression.manager", "CompressionManager", "compress"),
+    ("ncp.recovery.crash_recovery", "CrashRecovery", "interrupted_runs"),
+    ("ncp.storage.vector_store", "VectorStore", "store_embedding"),
+    ("ncp.storage.vector_store", "VectorStore", "search"),
+    ("ncp.storage.artifact_store", "ArtifactStore", "save"),
+    ("ncp.storage.object_store", "ObjectStore", "store"),
+    ("ncp.storage.cache", "CacheStore", "set"),
+    ("ncp.memory.manager", "MemoryManager", "retrieve"),
 ]
 
 GOAL = "research task routing, then build a helper and update the index"

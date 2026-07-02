@@ -12,9 +12,11 @@ experience database.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from ncp.compression.manager import CompressionManager
 from ncp.constraints.solver import ConstraintSolver
 from ncp.core.entities import Memory as MemoryEntity
 from ncp.core.entities import Task as PlatformTask
@@ -34,6 +36,14 @@ from ncp.learning.routing_optimizer import RoutingOptimizer
 from ncp.learning.telemetry_engine import TelemetryEngine
 from ncp.memory.manager import MemoryManager
 from ncp.planner.planner import Planner as PlatformPlanner
+from ncp.provenance import (
+    AuditTrail,
+    ConfidenceModel,
+    Evidence,
+    LineageTracker,
+    ProvenanceRecord,
+    Source,
+)
 from ncp.recovery.checkpoint_manager import CheckpointManager
 from ncp.recovery.crash_recovery import CrashRecovery
 from ncp.recovery.restore_manager import RestoreManager
@@ -82,6 +92,7 @@ class Kernel:
         self,
         storage_root: str = "storage",
         learning_enabled: bool = True,
+        auto_resume: bool = True,
         event_bus: EventBus | None = None,
         memory: MemoryManager | None = None,
         planner: PlatformPlanner | None = None,
@@ -128,6 +139,17 @@ class Kernel:
         self.verifier = Verifier(extra_stages={"platform_constraints": self._platform_constraint_stage})
         self.skill_registry = SkillRegistry()
 
+        # provenance: every committed memory carries an audited lineage record
+        self.lineage = LineageTracker()
+        self.audit = AuditTrail()
+        self.compression = CompressionManager()
+
+        # vector memory survives restarts via the storage vectors/ slot
+        persisted_vectors = self.storage.load_document("vectors", "memory_embeddings")
+        if persisted_vectors:
+            self.memory.vectors.vectors.update(persisted_vectors.get("vectors", {}))
+            self.memory.vector_texts.update(persisted_vectors.get("texts", {}))
+
         self.world = WorldState(storage=self.storage)
         self.world.load()
 
@@ -147,6 +169,32 @@ class Kernel:
         self.snapshots = SnapshotManager(self.storage)
         self.crash_recovery = CrashRecovery(self.checkpoints)
         self.restore_manager = RestoreManager(self.checkpoints)
+
+        # crash recovery is automatic: diagnose interrupted runs on boot and,
+        # unless told otherwise, finish them before accepting new work
+        interrupted = self.crash_recovery.interrupted_runs()
+        self.startup_report: dict[str, Any] = {
+            "interrupted_runs": list(interrupted),
+            "diagnoses": [self.crash_recovery.diagnose(run_id) for run_id in interrupted],
+            "auto_resumed": [],
+        }
+        if auto_resume:
+            for run_id in interrupted:
+                response = self.resume(run_id)
+                if response is not None:
+                    self.startup_report["auto_resumed"].append(
+                        {"run_id": run_id, "status": response.status}
+                    )
+
+    def startup_report_summary(self) -> str:
+        report = self.startup_report
+        if not report["interrupted_runs"]:
+            return "clean start: no interrupted runs"
+        resumed = ", ".join(f"{r['run_id']}={r['status']}" for r in report["auto_resumed"]) or "none"
+        return (
+            f"recovered start: {len(report['interrupted_runs'])} interrupted run(s), "
+            f"auto-resumed: {resumed}"
+        )
 
     # -- pipeline ----------------------------------------------------------
     def submit(self, goal: str, project: str | None = None) -> KernelResponse:
@@ -191,6 +239,11 @@ class Kernel:
             source="kernel",
         )
 
+        # the run summary is a durable artifact of the run
+        self.storage.artifacts.save(
+            f"{dag.run_id}_summary.txt", self._summarize(dag), category="run_summaries",
+        )
+
         node_results = [n.to_dict() for n in dag.topological_order()]
         confidences = [n.result.get("verification", {}).get("confidence", 0.0) for n in dag.nodes.values()]
         return KernelResponse(
@@ -205,7 +258,14 @@ class Kernel:
 
     # -- node execution ----------------------------------------------------
     def _run_node(self, node: DAGNode) -> dict[str, Any]:
-        provider = self.selector.select({"capability": node.task_type, "task_type": node.task_type})
+        # provider selection is cached per task type; the cache is cleared
+        # whenever learning refreshes the routing policy
+        cache_key = f"provider:{node.task_type}"
+        provider = self.registry.get(self.storage.cache.get(cache_key) or "")
+        if provider is None:
+            provider = self.selector.select({"capability": node.task_type, "task_type": node.task_type})
+            if provider is not None:
+                self.storage.cache.set(cache_key, provider.id)
         node.provider_id = provider.id if provider else ""
         self.resources.acquire()
         try:
@@ -221,6 +281,11 @@ class Kernel:
             }
         finally:
             self.resources.release()
+
+        # retrieval augmentation: related memories (keyword + vector search)
+        # ride along with the node output
+        related = self.memory.retrieve(node.goal, top_k=3)
+        output["related_memories"] = [m.content for m in related]
 
         # platform-lineage pass: route + execute the node as a platform Task
         # (additive observability; must never change output["status"])
@@ -246,6 +311,9 @@ class Kernel:
         if report.approved:
             self._commit_memory(node, output)
         self._learn_node(node, output, report)
+        # node-output scratch: raw outputs live in the object store so
+        # reporting can read them back without re-walking the DAG
+        self.storage.objects.store(node.id, json.dumps(output, default=str).encode("utf-8"))
         return output
 
     def _platform_constraint_stage(self, output: dict[str, Any], context: dict[str, Any]) -> list[str]:
@@ -255,12 +323,33 @@ class Kernel:
         return [f"platform_constraint:{self.platform_constraints.explain(task)}"]
 
     def _commit_memory(self, node: DAGNode, output: dict[str, Any]) -> None:
+        confidence = output.get("verification", {}).get("confidence", 0.5)
+        record = ProvenanceRecord(
+            source=Source(type="system", identifier=node.provider_id or "kernel", context=node.goal),
+            confidence=ConfidenceModel(base_confidence=confidence, verification_count=1),
+        )
+        record.add_evidence(Evidence(
+            type="observation",
+            data=output.get("response", ""),
+            confidence=confidence,
+            metadata={"node_id": node.id, "task_type": node.task_type},
+        ))
+        record.lineage = self.lineage.record(record.id, operation="created", description=f"node {node.name}")
+        self.audit.log(
+            action="memory.commit",
+            actor="kernel",
+            target=node.name,
+            details={"provenance_id": str(record.id), "node_id": node.id},
+            result="approved",
+        )
+        self.storage.save_document("provenance", str(record.id), record.to_dict())
         self.memory.store(MemoryEntity(
             name=f"step:{node.name}",
             content=output.get("response", ""),
             memory_type="episodic",
-            confidence=output.get("verification", {}).get("confidence", 0.5),
+            confidence=confidence,
             tags=[node.task_type],
+            provenance_id=record.id,
         ))
         newly = sync_library_to_registry(self.runtime.skills, self.skill_registry)
         if newly:
@@ -268,6 +357,14 @@ class Kernel:
 
     def _checkpoint(self, dag: ExecutionDAG) -> None:
         checkpoint_id = self.checkpoints.checkpoint(dag, variables={"goal": dag.goal})
+        # a compressed copy of the DAG lands in the artifact store; the
+        # primary (uncompressed) checkpoint/restore path is untouched
+        compressed = self.compression.compress(dag.to_dict())
+        self.storage.artifacts.save(
+            f"{dag.run_id}_{checkpoint_id}.json",
+            json.dumps(compressed, default=str),
+            category="checkpoints_compressed",
+        )
         self.events.publish(
             type=EventType.CHECKPOINT_SAVED.value,
             payload={"run_id": dag.run_id, "checkpoint_id": checkpoint_id},
@@ -289,6 +386,8 @@ class Kernel:
         self.registry.record_outcome(node.provider_id, output.get("status") == "accepted")
         if self.learning_enabled:
             self.routing_optimizer.refresh()
+            # the routing policy may have shifted: cached selections are stale
+            self.storage.cache.clear()
 
     def _learn_plan(self, dag: ExecutionDAG) -> None:
         nodes = list(dag.nodes.values())
@@ -301,8 +400,12 @@ class Kernel:
     def _summarize(self, dag: ExecutionDAG) -> str:
         lines = [f"run {dag.run_id}: {dag.goal}"]
         for node in dag.topological_order():
-            chosen = node.result.get("chosen") or {}
-            lines.append(f"  - {node.name} [{node.status}] via {node.provider_id}: {chosen.get('name', node.result.get('error', ''))}")
+            result = node.result
+            scratch = self.storage.objects.retrieve(node.id)
+            if scratch:
+                result = json.loads(scratch.decode("utf-8"))
+            chosen = result.get("chosen") or {}
+            lines.append(f"  - {node.name} [{node.status}] via {node.provider_id}: {chosen.get('name', result.get('error', ''))}")
         return "\n".join(lines)
 
     def snapshot(self, name: str = "kernel") -> str:
@@ -324,4 +427,8 @@ class Kernel:
 
     def shutdown(self) -> None:
         self.world.save()
+        self.storage.save_document("vectors", "memory_embeddings", {
+            "vectors": self.memory.vectors.vectors,
+            "texts": self.memory.vector_texts,
+        })
         self.events.stop()

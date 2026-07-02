@@ -111,6 +111,7 @@ class Memory(Entity):
     embeddings: Optional[List[float]] = None
     tags: List[str] = field(default_factory=list)
     source_task_id: Optional[UUID] = None
+    provenance_id: Optional[UUID] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
@@ -125,6 +126,7 @@ class Memory(Entity):
             "embeddings": self.embeddings,
             "tags": self.tags,
             "source_task_id": str(self.source_task_id) if self.source_task_id else None,
+            "provenance_id": str(self.provenance_id) if self.provenance_id else None,
         })
         return data
 

@@ -13,6 +13,7 @@ from ncp.interfaces.memory import MemoryInterface
 from ncp.interfaces.storage import StorageInterface
 from ncp.memory.archive import ArchiveMemory
 from ncp.memory.consolidation import ConsolidationManager
+from ncp.memory.embedding import embed, similarity
 from ncp.memory.episodic import EpisodicMemory
 from ncp.memory.forgetting import ForgettingPolicy
 from ncp.memory.policies import MemoryPolicies
@@ -24,6 +25,7 @@ from ncp.memory.semantic import SemanticMemory
 from ncp.memory.session import SessionMemory
 from ncp.memory.skill import SkillMemory
 from ncp.memory.working import WorkingMemory
+from ncp.storage.vector_store import VectorStore
 from ncp.utils.config import Config
 from ncp.utils.logger import get_logger
 
@@ -54,6 +56,8 @@ class MemoryManager(MemoryInterface):
     archive: ArchiveMemory = field(default_factory=ArchiveMemory)
 
     # Supporting components
+    vectors: VectorStore = field(default_factory=VectorStore)
+    vector_texts: Dict[str, str] = field(default_factory=dict)
     retrieval: RetrievalEngine = field(default_factory=RetrievalEngine)
     ranker: MemoryRanker = field(default_factory=MemoryRanker)
     forgetting: ForgettingPolicy = field(default_factory=ForgettingPolicy)
@@ -85,6 +89,15 @@ class MemoryManager(MemoryInterface):
         """
         # Always add to working memory
         self.working.add(item)
+
+        # Embed the item's text so it becomes vector-retrievable
+        text = self._item_text(item)
+        if text:
+            vector = embed(text)
+            if isinstance(item, Memory):
+                item.embeddings = vector
+            self.vectors.store_embedding(str(item.id), vector)
+            self.vector_texts[str(item.id)] = text
 
         if isinstance(item, Memory):
             # Route to specific tier
@@ -125,6 +138,16 @@ class MemoryManager(MemoryInterface):
 
         logger.debug("Stored item: %s (%s)", item.id, type(item).__name__)
 
+    def _item_text(self, item: Union[Entity, Task, Result, Memory]) -> str:
+        """Derive the embeddable text for an item."""
+        if isinstance(item, Memory):
+            return item.content or item.name
+        if isinstance(item, Result):
+            return str(item.output) if item.output else str(item.task_id)
+        if isinstance(item, (Task, Entity)):
+            return getattr(item, "description", "") or item.name
+        return ""
+
     def _store_episodic(self, memory: Memory) -> None:
         """Store in episodic memory."""
         # Create a synthetic episode
@@ -157,7 +180,23 @@ class MemoryManager(MemoryInterface):
                 confidence=concept.confidence,
             ))
 
-        # 3. Rank and return
+        # 3. Vector search over everything ever stored (catches paraphrases
+        # the keyword searches above miss)
+        query_vector = embed(query)
+        for key in self.vectors.search(query_vector, top_k):
+            stored = self.vectors.vectors.get(key, [])
+            if similarity(query_vector, stored) < 0.25:
+                continue  # nearest neighbour, but not actually near
+            text = self.vector_texts.get(key)
+            if text and not any(r.content == text for r in results):
+                results.append(Memory(
+                    content=text,
+                    memory_type="semantic",
+                    confidence=0.6,
+                    embeddings=self.vectors.vectors.get(key),
+                ))
+
+        # 4. Rank and return
         if results:
             return self.ranker.rank(results, query, top_k)
 
