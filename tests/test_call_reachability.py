@@ -56,6 +56,15 @@ TARGETS = [
     ("ncp.skills.evolution", "SkillEvolution", "evolve"),
     ("ncp.capabilities.graph", "CapabilityGraph", "rebuild"),
     ("ncp.storage.backup_manager", "BackupManager", "create_backup"),
+    # Chunk 5 — knowledge graph family, retrieval engine, graph store
+    ("ncp.memory.retrieval", "RetrievalEngine", "retrieve"),
+    ("ncp.graph.graph", "Graph", "add_node"),
+    ("ncp.graph.index", "GraphIndex", "add_node"),
+    ("ncp.graph.query", "QueryEngine", "get_nodes_by_type"),
+    ("ncp.graph.traversal", "TraversalEngine", "bfs"),
+    ("ncp.graph.fractal", "FractalAnalyzer", "compute_fractal_dimension"),
+    ("ncp.graph.compression", "GraphCompressor", "compress"),
+    ("ncp.storage.graph_store", "GraphStore", "save_graph"),
 ]
 
 GOAL = "research task routing, then build a helper and update the index"
@@ -80,6 +89,8 @@ def call_counts(tmp_path_factory):
             response = kernel.submit(GOAL)
             assert response.status == "completed", "lifecycle run must itself succeed"
             kernel.run_maintenance(force=True)
+            kernel.graph_report()
+            kernel.graph_traverse()
         finally:
             kernel.shutdown()
         return {key: spy.call_count for key, spy in spies.items()}

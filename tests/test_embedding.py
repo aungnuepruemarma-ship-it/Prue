@@ -48,6 +48,22 @@ class TestMemoryVectorRetrieval:
         results = memory.retrieve("recover execution after a crash", top_k=5)
         assert any("checkpoint every execution node" in m.content for m in results)
 
+    def test_store_mirrors_into_knowledge_graph(self):
+        memory = make_memory()
+        memory.store(Memory(content="the kernel unifies both pipelines", memory_type="semantic"))
+        memory.store(Memory(content="providers are selected by constraints", memory_type="semantic"))
+        graph = memory.knowledge_graph
+        assert len(graph.nodes) == 2
+        assert len(graph.edges) == 1, "consecutive items are linked temporally"
+        assert memory.retrieval.graph is graph, "retrieval engine reads the live mirror"
+        assert memory.graph_index.lookup_by_type("semantic")
+
+    def test_retrieve_uses_graph_label_match(self):
+        memory = make_memory()
+        memory.store(Memory(content="the kernel unifies both pipelines", memory_type="episodic", name="x"))
+        results = memory.retrieve("kernel", top_k=5)
+        assert any("kernel unifies" in m.content for m in results)
+
     def test_retrieve_skips_unrelated_vectors(self):
         memory = make_memory()
         memory.store(Memory(content="paint the garden fence", memory_type="episodic", name="x"))

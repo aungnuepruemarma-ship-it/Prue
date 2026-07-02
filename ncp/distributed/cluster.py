@@ -1,31 +1,34 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from ..api.protocol import TaskRequest, TaskResponse, handle_request
-from ..core.runtime import Runtime, build_default_universe
+from ..api.protocol import TaskRequest, TaskResponse, handle_kernel_request
 from ..utils.ids import new_id
-from ..utils.runtime_config import Config
+
+if TYPE_CHECKING:
+    from ..kernel.kernel import Kernel
 
 
 @dataclass
 class Node:
     node_id: str
-    runtime: Runtime
+    kernel: "Kernel"
     status: str = "online"
+
 
 @dataclass
 class Cluster:
-    """Round-robins goals across nodes, each owning its own runtime."""
+    """Round-robins goals across nodes, each owning its own kernel."""
 
     nodes: list[Node] = field(default_factory=list)
     _next: int = 0
 
-    def add_node(self, node_id: str, runtime: Runtime | None = None, output_dir: str | None = None) -> Node:
-        if runtime is None:
-            config = Config(output_dir=output_dir) if output_dir else Config(output_dir=f"ncp_output/{node_id}")
-            runtime = Runtime(build_default_universe(), config=config)
-        node = Node(node_id=node_id, runtime=runtime)
+    def add_node(self, node_id: str, kernel: "Kernel | None" = None, output_dir: str | None = None) -> Node:
+        if kernel is None:
+            from ..kernel.kernel import Kernel
+            kernel = Kernel(storage_root=output_dir or f"ncp_output/{node_id}")
+        node = Node(node_id=node_id, kernel=kernel)
         self.nodes.append(node)
         return node
 
@@ -39,6 +42,10 @@ class Cluster:
         node = nodes[self._next % len(nodes)]
         self._next += 1
         request = TaskRequest(task_id=new_id("t"), goal=goal, payload={"node": node.node_id})
-        response = handle_request(node.runtime, request)
+        response = handle_kernel_request(node.kernel, request)
         response.result["node"] = node.node_id
         return response
+
+    def shutdown(self) -> None:
+        for node in self.nodes:
+            node.kernel.shutdown()

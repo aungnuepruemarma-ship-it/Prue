@@ -9,6 +9,10 @@ from typing import Any, Dict, List, Union
 from ncp.core.entities import Entity, Memory, Result, Skill, Task
 from ncp.events.bus import EventBus
 from ncp.events.event import EventType
+from ncp.graph.edge import Edge, EdgeType
+from ncp.graph.graph import Graph
+from ncp.graph.index import GraphIndex
+from ncp.graph.node import Node as GraphNode
 from ncp.interfaces.memory import MemoryInterface
 from ncp.interfaces.storage import StorageInterface
 from ncp.memory.archive import ArchiveMemory
@@ -58,6 +62,8 @@ class MemoryManager(MemoryInterface):
     # Supporting components
     vectors: VectorStore = field(default_factory=VectorStore)
     vector_texts: Dict[str, str] = field(default_factory=dict)
+    knowledge_graph: Graph = field(default_factory=lambda: Graph(name="knowledge"))
+    graph_index: GraphIndex = field(default_factory=GraphIndex)
     retrieval: RetrievalEngine = field(default_factory=RetrievalEngine)
     ranker: MemoryRanker = field(default_factory=MemoryRanker)
     forgetting: ForgettingPolicy = field(default_factory=ForgettingPolicy)
@@ -74,6 +80,10 @@ class MemoryManager(MemoryInterface):
             event_bus=self.event_bus,
             config=self.config,
         )
+
+        # The retrieval engine searches the live knowledge-graph mirror
+        self.retrieval.graph = self.knowledge_graph
+        self.retrieval.index = self.graph_index
 
         # Configure from config
         self.working.max_items = self.config.get("memory.working.max_items", 1024)
@@ -98,6 +108,7 @@ class MemoryManager(MemoryInterface):
                 item.embeddings = vector
             self.vectors.store_embedding(str(item.id), vector)
             self.vector_texts[str(item.id)] = text
+            self._mirror_to_graph(item, text, vector)
 
         if isinstance(item, Memory):
             # Route to specific tier
@@ -137,6 +148,34 @@ class MemoryManager(MemoryInterface):
         )
 
         logger.debug("Stored item: %s (%s)", item.id, type(item).__name__)
+
+    def _mirror_to_graph(self, item: Union[Entity, Task, Result, Memory],
+                         text: str, vector: List[float]) -> None:
+        """Mirror every stored item into the knowledge graph + index.
+
+        Nodes are typed by memory tier / entity kind; each node is linked
+        to its temporal predecessor so the graph carries real structure
+        the traversal and retrieval engines can walk.
+        """
+        node_type = item.memory_type if isinstance(item, Memory) else type(item).__name__.lower()
+        node = GraphNode(
+            label=text[:120],
+            node_type=node_type,
+            confidence=getattr(item, "confidence", 1.0),
+            tags=list(getattr(item, "tags", [])),
+            embedding=vector,
+            metadata={"item_id": str(item.id)},
+        )
+        previous = self.knowledge_graph.metadata.get("latest_node_id")
+        self.knowledge_graph.add_node(node)
+        self.graph_index.add_node(node)
+        if previous is not None and previous in self.knowledge_graph.nodes:
+            self.knowledge_graph.add_edge(Edge(
+                source_id=previous,
+                target_id=node.id,
+                edge_type=EdgeType.TEMPORAL.value,
+            ))
+        self.knowledge_graph.metadata["latest_node_id"] = node.id
 
     def _item_text(self, item: Union[Entity, Task, Result, Memory]) -> str:
         """Derive the embeddable text for an item."""
@@ -184,7 +223,13 @@ class MemoryManager(MemoryInterface):
                 confidence=concept.confidence,
             ))
 
-        # 3. Vector search over everything ever stored (catches paraphrases
+        # 3. Multi-scale graph retrieval (label match over the knowledge
+        # graph mirror, ranked)
+        for candidate in self.retrieval.retrieve(query, top_k):
+            if not any(r.content == candidate.content for r in results):
+                results.append(candidate)
+
+        # 4. Vector search over everything ever stored (catches paraphrases
         # the keyword searches above miss)
         query_vector = embed(query)
         for key in self.vectors.search(query_vector, top_k):
@@ -200,7 +245,7 @@ class MemoryManager(MemoryInterface):
                     embeddings=self.vectors.vectors.get(key),
                 ))
 
-        # 4. Rank and return
+        # 5. Rank and return
         if results:
             return self.ranker.rank(results, query, top_k)
 

@@ -21,19 +21,25 @@ class GraphIndex:
         self._type_index: Dict[str, List[UUID]] = {}
         self._tag_index: Dict[str, List[UUID]] = {}
 
+    def add_node(self, node) -> None:
+        """Index a single node (incremental build)."""
+        self._label_index[node.label] = node.id
+        if node.node_type not in self._type_index:
+            self._type_index[node.node_type] = []
+        if node.id not in self._type_index[node.node_type]:
+            self._type_index[node.node_type].append(node.id)
+        if node.embedding:
+            self._embeddings[node.id] = node.embedding
+        for tag in node.tags:
+            if tag not in self._tag_index:
+                self._tag_index[tag] = []
+            if node.id not in self._tag_index[tag]:
+                self._tag_index[tag].append(node.id)
+
     def build(self, graph: Graph) -> None:
         """Build index from graph."""
         for node in graph.nodes.values():
-            self._label_index[node.label] = node.id
-            if node.node_type not in self._type_index:
-                self._type_index[node.node_type] = []
-            self._type_index[node.node_type].append(node.id)
-            if node.embedding:
-                self._embeddings[node.id] = node.embedding
-            for tag in node.tags:
-                if tag not in self._tag_index:
-                    self._tag_index[tag] = []
-                self._tag_index[tag].append(node.id)
+            self.add_node(node)
         logger.info("Index built: %d nodes, %d embeddings",
                      len(self._label_index), len(self._embeddings))
 

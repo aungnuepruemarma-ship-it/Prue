@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..core.runtime import Runtime
+
+if TYPE_CHECKING:
+    from ..kernel.kernel import Kernel
 
 
 @dataclass
@@ -31,4 +34,20 @@ def handle_request(runtime: Runtime, request: TaskRequest) -> TaskResponse:
             "next_goal": result.summary.get("next_goal"),
         },
         explanation=result.explanation,
+    )
+
+
+def handle_kernel_request(kernel: "Kernel", request: TaskRequest) -> TaskResponse:
+    """Drive a full kernel pipeline run from a protocol-level task request."""
+    response = kernel.submit(request.goal, project=request.payload.get("project"))
+    return TaskResponse(
+        task_id=request.task_id,
+        status=response.status,
+        result={
+            "run_id": response.run_id,
+            "confidence": response.confidence,
+            "verified": response.verified,
+            "nodes": len(response.node_results),
+        },
+        explanation=response.response,
     )

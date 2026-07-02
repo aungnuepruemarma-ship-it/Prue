@@ -319,6 +319,33 @@ class TestSkillEvolution:
         assert result["promoted"] >= 1 and strong.confidence > 0.9
 
 
+def test_kernel_graph_report_and_ops(tmp_path):
+    """The knowledge graph mirror is live: reportable, traversable, and
+    curatable via the merge/split admin operations."""
+    kernel = make_kernel(tmp_path)
+    try:
+        kernel.submit("update the index, then research routing")
+        report = kernel.graph_report()
+        assert report["metrics"]["node_count"] >= 2
+        assert "fractal_dimension" in report
+        assert report["node_types"], "nodes are typed by memory tier"
+
+        walk = kernel.graph_traverse(max_depth=10)
+        assert walk, "BFS walks the temporal chain"
+
+        graph = kernel.memory.knowledge_graph
+        merge_ids = list(graph.nodes)[:2]
+        nodes_before = len(graph.nodes)
+        super_node = kernel.graph_merge(merge_ids, label="merged_steps")
+        assert super_node.node_type == "super_node"
+        assert len(graph.nodes) == nodes_before - 1  # two removed, one added
+
+        partitions = kernel.graph_split(2)
+        assert len(partitions) == 2
+    finally:
+        kernel.shutdown()
+
+
 def test_resource_manager_limits():
     from ncp.kernel.resource_manager import ResourceManager
 

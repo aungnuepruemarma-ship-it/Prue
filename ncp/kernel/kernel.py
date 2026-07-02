@@ -30,6 +30,16 @@ from ncp.execution.compiler import DAGCompiler
 from ncp.execution.dag import ExecutionDAG
 from ncp.execution.dag_executor import DAGExecutor
 from ncp.execution.node import DAGNode
+from ncp.graph.compression import GraphCompressor
+from ncp.graph.expansion import expand_node
+from ncp.graph.fractal import FractalAnalyzer
+from ncp.graph.graph import Graph
+from ncp.graph.hierarchy import GraphHierarchy
+from ncp.graph.merge import merge_nodes
+from ncp.graph.metrics import GraphMetrics
+from ncp.graph.query import QueryEngine
+from ncp.graph.split import split_by_clustering
+from ncp.graph.traversal import TraversalEngine
 from ncp.kernel.capability_registry import CapabilityGraph, ProviderSelector, build_default_registry
 from ncp.kernel.resource_manager import ResourceManager
 from ncp.learning.experience_db import ExperienceDB
@@ -174,6 +184,7 @@ class Kernel:
 
         self.maintenance_interval = 10
         self._runs_since_maintenance = 0
+        self.graph_compressor = GraphCompressor()
 
         # provenance: every committed memory carries an audited lineage record
         self.lineage = LineageTracker()
@@ -495,16 +506,65 @@ class Kernel:
         self._runs_since_maintenance = 0
         extracted = self.skill_extractor.extract_from_episodes(self.memory.episodic)
         evolution = self.skill_evolution.evolve()
+        # curate the knowledge graph: keep a compressed copy in the graph
+        # store (compress() works in place, so it gets its own deep copy)
+        import copy
+
+        graph = self.memory.knowledge_graph
+        compressed = self.graph_compressor.compress(copy.deepcopy(graph))
+        self.storage.graph.save_graph("knowledge_compressed", compressed)
         backup = self.storage.backups.create_backup(label="maintenance")
         pruned = self.storage.backups.prune()
         report = {
             "skills_extracted": len(extracted),
             "evolution": evolution,
+            "graph": {"nodes": len(graph.nodes), "compressed_nodes": len(compressed.nodes)},
             "backup": backup.name,
             "backups_pruned": pruned,
         }
         self.publisher.publish(EventType.MAINTENANCE_COMPLETED, report, priority=EventPriority.LOW)
         return report
+
+    # -- knowledge graph operations ----------------------------------------
+    def graph_report(self) -> dict[str, Any]:
+        """Structural report over the live knowledge graph: quality metrics,
+        fractal dimension, and node-type census."""
+        graph = self.memory.knowledge_graph
+        hierarchy = GraphHierarchy()
+        hierarchy.add_graph(graph)
+        analyzer = FractalAnalyzer(hierarchy)
+        query = QueryEngine(graph)
+        node_types = sorted({n.node_type for n in graph.nodes.values()})
+        return {
+            "metrics": GraphMetrics.compute(graph).to_dict(),
+            "fractal_dimension": analyzer.compute_fractal_dimension(graph),
+            "node_types": {t: len(query.get_nodes_by_type(t)) for t in node_types},
+        }
+
+    def graph_traverse(self, start_label: str | None = None, max_depth: int = 5) -> list[str]:
+        """BFS over the knowledge graph from a labelled node (or the oldest)."""
+        graph = self.memory.knowledge_graph
+        if not graph.nodes:
+            return []
+        start_id = None
+        if start_label is not None:
+            start_id = self.memory.graph_index.lookup_by_label(start_label)
+        if start_id is None:
+            start_id = next(iter(graph.nodes))
+        engine = TraversalEngine(graph, self.memory.graph_index)
+        return [graph.nodes[nid].label for nid in engine.bfs(start_id, max_depth=max_depth)]
+
+    def graph_merge(self, node_ids: list, label: str = ""):
+        """Admin operation: collapse the given nodes into one super-node."""
+        return merge_nodes(self.memory.knowledge_graph, node_ids, label)
+
+    def graph_split(self, num_partitions: int = 2) -> list[Graph]:
+        """Admin operation: partition the knowledge graph into subgraphs."""
+        return split_by_clustering(self.memory.knowledge_graph, num_partitions)
+
+    def graph_expand(self, node_id, expansion: Graph) -> None:
+        """Admin operation: expand an abstract node into a detailed subgraph."""
+        expand_node(self.memory.knowledge_graph, node_id, expansion)
 
     # -- reporting ---------------------------------------------------------
     def _summarize(self, dag: ExecutionDAG) -> str:
