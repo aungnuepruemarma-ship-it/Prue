@@ -237,6 +237,88 @@ def test_kernel_coding_node_type(tmp_path):
         kernel.shutdown()
 
 
+def test_kernel_maintenance_cycle(tmp_path):
+    """Forced maintenance extracts episode skills, evolves the pool, and
+    creates a pruned backup."""
+    kernel = make_kernel(tmp_path)
+    try:
+        for _ in range(3):  # repeated successful traces for the extractor
+            kernel.submit("update the index")
+        report = kernel.run_maintenance(force=True)
+        assert report is not None
+        assert report["skills_extracted"] >= 1, "repeated successful episodes became skills"
+        assert set(report["evolution"]) == {"promoted", "retired"}
+        assert kernel.storage.backups.list_backups(), "backup created"
+        assert kernel.telemetry.events_of_type(EventType.MAINTENANCE_COMPLETED.value)
+    finally:
+        kernel.shutdown()
+
+
+def test_kernel_maintenance_gated_by_interval(tmp_path):
+    kernel = make_kernel(tmp_path)
+    try:
+        assert kernel.run_maintenance() is None, "not due yet"
+        kernel.maintenance_interval = 1
+        kernel.submit("update the index")  # _execute triggers it automatically
+        assert kernel.storage.backups.list_backups(), "auto maintenance ran once due"
+    finally:
+        kernel.shutdown()
+
+
+def test_kernel_workers_ride_the_event_bus(tmp_path):
+    """Consolidation and cleanup workers are dispatched on TASK_FINISHED."""
+    from unittest import mock
+
+    kernel = make_kernel(tmp_path)
+    try:
+        assert kernel.worker_scheduler.dispatcher.get_workers_for(
+            EventType.TASK_FINISHED.value) == ["consolidation", "cleanup"]
+        worker_cls = type(kernel.consolidation_worker)
+        original = worker_cls.run
+        with mock.patch.object(worker_cls, "run", autospec=True, side_effect=original) as spy:
+            kernel.submit("update the index")
+        assert spy.call_count >= 1, "consolidation worker ran on task completion"
+    finally:
+        kernel.shutdown()
+
+
+def test_selector_uses_graph_fallback():
+    """When find() filters everything out, the capability graph still knows
+    which provider serves the capability."""
+    from ncp.capabilities.graph import CapabilityGraph
+    from ncp.capabilities.registry import ProviderRecord, ProviderRegistry
+    from ncp.capabilities.selector import ProviderSelector
+
+    registry = ProviderRegistry()
+    registry.register(ProviderRecord(id="downed", capabilities=["special"], availability=0.0))
+    registry.register(ProviderRecord(id="general", capabilities=["plan"]))
+    selector = ProviderSelector(registry, capability_graph=CapabilityGraph(registry))
+
+    chosen = selector.select({"capability": "special"})
+    assert chosen is not None and chosen.id == "downed", \
+        "graph fallback found the capable-but-unavailable provider"
+
+
+class TestSkillEvolution:
+    def test_evolve_promotes_strong_and_retires_weak(self):
+        from ncp.core.entities import Skill
+        from ncp.skills.benchmark import SkillBenchmark
+        from ncp.skills.evolution import SkillEvolution
+        from ncp.skills.registry import SkillRegistry
+
+        registry = SkillRegistry()
+        strong = Skill(name="strong", memory_type="skill", success_count=95,
+                       failure_count=5, confidence=0.9, is_active=True)
+        weak = Skill(name="weak", memory_type="skill", success_count=1,
+                     failure_count=9, confidence=0.1, is_active=True)
+        registry.register(strong)
+        registry.register(weak)
+
+        result = SkillEvolution(registry, SkillBenchmark()).evolve()
+        assert result["retired"] >= 1 and not weak.is_active
+        assert result["promoted"] >= 1 and strong.confidence > 0.9
+
+
 def test_resource_manager_limits():
     from ncp.kernel.resource_manager import ResourceManager
 

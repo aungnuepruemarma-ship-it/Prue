@@ -45,6 +45,17 @@ TARGETS = [
     ("ncp.coding.verifier", "CodeVerifier", "verify_all"),
     ("ncp.coding.optimizer", "CodeOptimizer", "optimize"),
     ("ncp.coding.benchmark", "CodeBenchmark", "compare"),
+    # Chunk 4 — skills, workers, event publisher/dispatcher, capability graph
+    ("ncp.events.publisher", "EventPublisher", "publish"),
+    ("ncp.events.dispatcher", "EventDispatcher", "register_worker"),
+    ("ncp.workers.scheduler", "WorkerScheduler", "register_worker"),
+    ("ncp.workers.consolidation", "ConsolidationWorker", "run"),
+    ("ncp.workers.cleanup", "CleanupWorker", "run"),
+    ("ncp.skills.library", "SkillLibrary", "find_skill"),
+    ("ncp.skills.extractor", "SkillExtractor", "extract_from_episodes"),
+    ("ncp.skills.evolution", "SkillEvolution", "evolve"),
+    ("ncp.capabilities.graph", "CapabilityGraph", "rebuild"),
+    ("ncp.storage.backup_manager", "BackupManager", "create_backup"),
 ]
 
 GOAL = "research task routing, then build a helper and update the index"
@@ -68,6 +79,7 @@ def call_counts(tmp_path_factory):
         try:
             response = kernel.submit(GOAL)
             assert response.status == "completed", "lifecycle run must itself succeed"
+            kernel.run_maintenance(force=True)
         finally:
             kernel.shutdown()
         return {key: spy.call_count for key, spy in spies.items()}

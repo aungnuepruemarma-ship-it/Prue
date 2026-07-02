@@ -8,9 +8,12 @@ the default ordering with observed outcomes.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from ncp.capabilities.registry import ProviderRecord, ProviderRegistry
+
+if TYPE_CHECKING:
+    from ncp.capabilities.graph import CapabilityGraph
 
 ScoreFn = Callable[[ProviderRecord, dict[str, Any]], float]
 
@@ -34,6 +37,7 @@ class ProviderSelector:
     registry: ProviderRegistry
     policy: ScoreFn | None = None
     history: list[dict[str, Any]] = field(default_factory=list)
+    capability_graph: "CapabilityGraph | None" = None
 
     def select(self, requirements: dict[str, Any]) -> ProviderRecord | None:
         candidates = self.registry.find(
@@ -41,6 +45,12 @@ class ProviderSelector:
             modality=requirements.get("modality"),
             min_context=requirements.get("min_context", 0),
         )
+        if not candidates and self.capability_graph is not None:
+            # the graph view includes providers find() filtered out
+            # (e.g. currently unavailable ones) — better than falling
+            # all the way back to "any provider at all"
+            provider_ids = self.capability_graph.providers_for(requirements.get("capability", ""))
+            candidates = [r for r in (self.registry.get(pid) for pid in provider_ids) if r is not None]
         if not candidates:
             candidates = self.registry.all()
         if not candidates:

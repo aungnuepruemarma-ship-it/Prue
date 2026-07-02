@@ -24,11 +24,13 @@ from ncp.core.entities import Task as PlatformTask
 from ncp.core.runtime import Runtime, build_default_universe
 from ncp.events.bus import EventBus
 from ncp.events.event import EventType
+from ncp.events.priority import EventPriority
+from ncp.events.publisher import EventPublisher
 from ncp.execution.compiler import DAGCompiler
 from ncp.execution.dag import ExecutionDAG
 from ncp.execution.dag_executor import DAGExecutor
 from ncp.execution.node import DAGNode
-from ncp.kernel.capability_registry import ProviderSelector, build_default_registry
+from ncp.kernel.capability_registry import CapabilityGraph, ProviderSelector, build_default_registry
 from ncp.kernel.resource_manager import ResourceManager
 from ncp.learning.experience_db import ExperienceDB
 from ncp.learning.planner_optimizer import PlannerOptimizer
@@ -53,7 +55,11 @@ from ncp.research.manager import ResearchManager
 from ncp.router.router import Router as PlatformRouter
 from ncp.runtime.executor import Executor as PlatformExecutor
 from ncp.simulator.simulator import Simulator
+from ncp.skills.benchmark import SkillBenchmark
 from ncp.skills.bridge import sync_library_to_registry
+from ncp.skills.evolution import SkillEvolution
+from ncp.skills.extractor import SkillExtractor as EpisodeSkillExtractor
+from ncp.skills.library import SkillLibrary
 from ncp.skills.registry import SkillRegistry
 from ncp.storage.relational_store import RelationalStore
 from ncp.storage.storage import Storage as PlatformStorage
@@ -61,6 +67,9 @@ from ncp.storage.storage_manager import StorageManager
 from ncp.utils.config import Config as SystemConfig
 from ncp.utils.runtime_config import RuntimeConfig
 from ncp.verification.verifier import Verifier
+from ncp.workers.cleanup import CleanupWorker
+from ncp.workers.consolidation import ConsolidationWorker
+from ncp.workers.scheduler import WorkerScheduler
 from ncp.world.world_state import WorldState
 
 
@@ -108,8 +117,10 @@ class Kernel:
         self.events.start()
 
         self.registry = build_default_registry()
-        self.selector = ProviderSelector(self.registry)
+        self.capability_graph = CapabilityGraph(self.registry)
+        self.selector = ProviderSelector(self.registry, capability_graph=self.capability_graph)
         self.resources = ResourceManager()
+        self.publisher = EventPublisher(self.events, source="kernel")
 
         # execution service: the reference runtime performs the actual
         # state transformations (activation -> Phi gate -> objective -> commit)
@@ -139,6 +150,30 @@ class Kernel:
         self.compiler = DAGCompiler(platform_planner=self.platform_planner, platform_simulator=self.platform_simulator)
         self.verifier = Verifier(extra_stages={"platform_constraints": self._platform_constraint_stage})
         self.skill_registry = SkillRegistry()
+        self.skill_library = SkillLibrary(self.skill_registry)
+        # episode-based extraction is a second signal alongside the reference
+        # runtime's bigram extractor; both feed the same registry
+        self.skill_extractor = EpisodeSkillExtractor(self.skill_registry)
+        self.skill_benchmark = SkillBenchmark()
+        self.skill_evolution = SkillEvolution(self.skill_registry, self.skill_benchmark)
+
+        # background workers ride the event bus: memory consolidation and
+        # cleanup run automatically whenever a task finishes
+        self.worker_scheduler = WorkerScheduler(event_bus=self.events)
+        self.consolidation_worker = ConsolidationWorker(self.memory)
+        self.cleanup_worker = CleanupWorker(self.memory)
+        self.worker_scheduler.register_worker(
+            "consolidation", lambda event: self.consolidation_worker.run(),
+            [EventType.TASK_FINISHED.value],
+        )
+        self.worker_scheduler.register_worker(
+            "cleanup", lambda event: self.cleanup_worker.run(),
+            [EventType.TASK_FINISHED.value],
+        )
+        self.worker_scheduler.start_all()
+
+        self.maintenance_interval = 10
+        self._runs_since_maintenance = 0
 
         # provenance: every committed memory carries an audited lineage record
         self.lineage = LineageTracker()
@@ -215,9 +250,9 @@ class Kernel:
         if restored is None:
             return None
         dag, _variables = restored
-        self.events.publish(type=EventType.RECOVERY_STARTED.value, payload={"run_id": run_id}, source="kernel")
+        self.publisher.publish(EventType.RECOVERY_STARTED, {"run_id": run_id}, priority=EventPriority.HIGH)
         response = self._execute(dag, dag.goal, project=None)
-        self.events.publish(type=EventType.RECOVERY_COMPLETED.value, payload={"run_id": run_id}, source="kernel")
+        self.publisher.publish(EventType.RECOVERY_COMPLETED, {"run_id": run_id})
         return response
 
     def _execute(self, dag: ExecutionDAG, goal: str, project: str | None) -> KernelResponse:
@@ -230,7 +265,7 @@ class Kernel:
         self.world.goals.set_status(goal_record.id, "active")
         self.world.start_job(dag.run_id, goal)
         self.world.session.record_run(dag.run_id)
-        self.events.publish(type=EventType.TASK_STARTED.value, payload={"run_id": dag.run_id, "goal": goal}, source="kernel")
+        self.publisher.publish(EventType.TASK_STARTED, {"run_id": dag.run_id, "goal": goal})
 
         executor = DAGExecutor(node_runner=self._run_node, checkpoint_hook=self._checkpoint)
         executor.run(dag)
@@ -241,11 +276,13 @@ class Kernel:
         self.world.observe_universe(self.runtime.universe)
         self.world.save()
         self._learn_plan(dag)
-        self.events.publish(
-            type=(EventType.TASK_FINISHED if status == "completed" else EventType.TASK_FAILED).value,
-            payload={"run_id": dag.run_id, "status": status},
-            source="kernel",
+        self.publisher.publish(
+            EventType.TASK_FINISHED if status == "completed" else EventType.TASK_FAILED,
+            {"run_id": dag.run_id, "status": status},
+            priority=EventPriority.NORMAL if status == "completed" else EventPriority.HIGH,
         )
+        self._runs_since_maintenance += 1
+        self.run_maintenance()
 
         # the run summary is a durable artifact of the run
         self.storage.artifacts.save(
@@ -275,6 +312,8 @@ class Kernel:
             if provider is not None:
                 self.storage.cache.set(cache_key, provider.id)
         node.provider_id = provider.id if provider else ""
+        # a matching library skill is a reuse hint for the executing runtime
+        known_skill = self.skill_library.find_skill(node.name)
         self.resources.acquire()
         try:
             result = self.runtime.step(node.goal, reasoner=provider.backend if provider else None)
@@ -287,6 +326,11 @@ class Kernel:
                 "relation_count": result.summary.get("relation_count"),
                 "confidence": 0.9 if result.status == "accepted" else 0.2,
             }
+            if known_skill is not None:
+                output["skill_hint"] = {
+                    "name": known_skill.name,
+                    "score": self.skill_benchmark.score(known_skill),
+                }
         finally:
             self.resources.release()
 
@@ -325,10 +369,10 @@ class Kernel:
 
         report = self.verifier.verify(output, context={"world_facts": self.world.facts, "task": task})
         output["verification"] = report.to_dict()
-        self.events.publish(
-            type=(EventType.VERIFICATION_PASSED if report.approved else EventType.VERIFICATION_FAILED).value,
-            payload={"node": node.name, "violations": report.violations},
-            source="kernel",
+        self.publisher.publish(
+            EventType.VERIFICATION_PASSED if report.approved else EventType.VERIFICATION_FAILED,
+            {"node": node.name, "violations": report.violations},
+            priority=EventPriority.NORMAL if report.approved else EventPriority.HIGH,
         )
         if report.approved:
             self._commit_memory(node, output)
@@ -398,7 +442,7 @@ class Kernel:
         ))
         newly = sync_library_to_registry(self.runtime.skills, self.skill_registry)
         if newly:
-            self.events.publish(type=EventType.SKILL_PROMOTED.value, payload={"count": newly}, source="kernel")
+            self.publisher.publish(EventType.SKILL_PROMOTED, {"count": newly})
 
     def _checkpoint(self, dag: ExecutionDAG) -> None:
         checkpoint_id = self.checkpoints.checkpoint(dag, variables={"goal": dag.goal})
@@ -410,10 +454,10 @@ class Kernel:
             json.dumps(compressed, default=str),
             category="checkpoints_compressed",
         )
-        self.events.publish(
-            type=EventType.CHECKPOINT_SAVED.value,
-            payload={"run_id": dag.run_id, "checkpoint_id": checkpoint_id},
-            source="kernel",
+        self.publisher.publish(
+            EventType.CHECKPOINT_SAVED,
+            {"run_id": dag.run_id, "checkpoint_id": checkpoint_id},
+            priority=EventPriority.LOW,
         )
 
     # -- learning ----------------------------------------------------------
@@ -440,6 +484,27 @@ class Kernel:
             return
         success_rate = sum(1 for n in nodes if n.status == "completed") / len(nodes)
         self.planner_optimizer.record_plan(len(nodes), success_rate)
+
+    # -- maintenance -------------------------------------------------------
+    def run_maintenance(self, force: bool = False) -> dict[str, Any] | None:
+        """Periodic upkeep: extract skills from episodes, evolve the skill
+        pool, and back up storage. Runs every ``maintenance_interval`` runs
+        (or immediately with ``force=True``)."""
+        if not force and self._runs_since_maintenance < self.maintenance_interval:
+            return None
+        self._runs_since_maintenance = 0
+        extracted = self.skill_extractor.extract_from_episodes(self.memory.episodic)
+        evolution = self.skill_evolution.evolve()
+        backup = self.storage.backups.create_backup(label="maintenance")
+        pruned = self.storage.backups.prune()
+        report = {
+            "skills_extracted": len(extracted),
+            "evolution": evolution,
+            "backup": backup.name,
+            "backups_pruned": pruned,
+        }
+        self.publisher.publish(EventType.MAINTENANCE_COMPLETED, report, priority=EventPriority.LOW)
+        return report
 
     # -- reporting ---------------------------------------------------------
     def _summarize(self, dag: ExecutionDAG) -> str:

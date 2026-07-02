@@ -1,4 +1,12 @@
-"""NCP Events - Event-driven communication system."""
+"""NCP Events - Event-driven communication system.
+
+Production paths publish through :class:`EventPublisher` (typed, sourced,
+prioritized) and route background workers through :class:`EventDispatcher`.
+:class:`EventSubscriber` is an intentionally thin alternate subscribe API —
+behaviorally identical to ``EventBus.subscribe``/``subscribe_all`` — kept
+for callers that want an object handle instead of the bus itself; it is
+unit-tested directly rather than force-wired into the kernel.
+"""
 
 from ncp.events.bus import EventBus
 from ncp.events.dispatcher import EventDispatcher

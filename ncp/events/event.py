@@ -81,6 +81,9 @@ class EventType(Enum):
     RECOVERY_STARTED = "recovery.started"
     RECOVERY_COMPLETED = "recovery.completed"
 
+    # Maintenance
+    MAINTENANCE_COMPLETED = "maintenance.completed"
+
 
 @dataclass
 class Event:

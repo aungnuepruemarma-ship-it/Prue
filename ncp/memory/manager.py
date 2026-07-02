@@ -149,13 +149,17 @@ class MemoryManager(MemoryInterface):
         return ""
 
     def _store_episodic(self, memory: Memory) -> None:
-        """Store in episodic memory."""
-        # Create a synthetic episode
-        self.episodic.episodes.append(
-            self.episodic.add_episode(
-                task=Task(name=memory.name or "unknown"),
-                result=Result(status="stored"),
-            )
+        """Store in episodic memory.
+
+        A confident memory records a successful episode — this is what the
+        episode-based skill extractor mines for repeated successful traces.
+        """
+        self.episodic.add_episode(
+            task=Task(name=memory.name or "unknown"),
+            result=Result(
+                status="success" if memory.confidence >= 0.5 else "failure",
+                output=memory.content,
+            ),
         )
 
     def retrieve(self, query: str, top_k: int = 10) -> List[Memory]:
