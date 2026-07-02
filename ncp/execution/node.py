@@ -18,6 +18,7 @@ class DAGNode:
     status: str = "pending"  # pending, running, completed, failed, skipped
     result: dict[str, Any] = field(default_factory=dict)
     provider_id: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -29,6 +30,7 @@ class DAGNode:
             "status": self.status,
             "result": self.result,
             "provider_id": self.provider_id,
+            "metadata": self.metadata,
         }
 
     @classmethod
@@ -42,4 +44,5 @@ class DAGNode:
             status=data.get("status", "pending"),
             result=dict(data.get("result", {})),
             provider_id=data.get("provider_id", ""),
+            metadata=dict(data.get("metadata", {})),
         )

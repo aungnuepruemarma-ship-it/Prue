@@ -83,6 +83,34 @@ def test_kernel_recovery_drill(tmp_path):
         kernel.shutdown()
 
 
+def test_kernel_invokes_platform_planner_router_executor(tmp_path):
+    """The platform lineage participates in every submit: planner annotates the
+    DAG at compile time, router+executor run per node (Phase 11 unification)."""
+    kernel = make_kernel(tmp_path)
+    try:
+        kernel.submit("research task routing, then update the index")
+        assert kernel.telemetry.events_of_type(EventType.PLANNER_FINISHED.value)
+        assert kernel.telemetry.events_of_type(EventType.ROUTER_SELECTED.value)
+        assert kernel.telemetry.events_of_type(EventType.EXECUTOR_FINISHED.value)
+    finally:
+        kernel.shutdown()
+
+
+def test_kernel_nodes_carry_platform_annotations(tmp_path):
+    """Every DAG node's result includes the platform execution pass and its
+    metadata carries the compile-time plan score / simulation prediction."""
+    kernel = make_kernel(tmp_path)
+    try:
+        response = kernel.submit("update the index")
+        for node in response.node_results:
+            assert "platform_execution" in node["result"]
+            assert node["result"]["platform_execution"].get("status") not in (None, "error")
+            assert "platform_score" in node["metadata"]
+            assert "predicted_confidence" in node["metadata"]
+    finally:
+        kernel.shutdown()
+
+
 def test_resource_manager_limits():
     from ncp.kernel.resource_manager import ResourceManager
 

@@ -15,7 +15,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from ncp.constraints.solver import ConstraintSolver
 from ncp.core.entities import Memory as MemoryEntity
+from ncp.core.entities import Task as PlatformTask
 from ncp.core.runtime import Runtime, build_default_universe
 from ncp.events.bus import EventBus
 from ncp.events.event import EventType
@@ -31,10 +33,15 @@ from ncp.learning.reward_engine import RewardEngine
 from ncp.learning.routing_optimizer import RoutingOptimizer
 from ncp.learning.telemetry_engine import TelemetryEngine
 from ncp.memory.manager import MemoryManager
+from ncp.planner.planner import Planner as PlatformPlanner
 from ncp.recovery.checkpoint_manager import CheckpointManager
 from ncp.recovery.crash_recovery import CrashRecovery
 from ncp.recovery.restore_manager import RestoreManager
 from ncp.recovery.snapshot_manager import SnapshotManager
+from ncp.research.manager import ResearchManager
+from ncp.router.router import Router as PlatformRouter
+from ncp.runtime.executor import Executor as PlatformExecutor
+from ncp.simulator.simulator import Simulator
 from ncp.skills.bridge import sync_library_to_registry
 from ncp.skills.registry import SkillRegistry
 from ncp.storage.relational_store import RelationalStore
@@ -71,17 +78,26 @@ class KernelResponse:
 class Kernel:
     """Owns the full pipeline; `submit(goal)` is the one public entry point."""
 
-    def __init__(self, storage_root: str = "storage", learning_enabled: bool = True):
+    def __init__(
+        self,
+        storage_root: str = "storage",
+        learning_enabled: bool = True,
+        event_bus: EventBus | None = None,
+        memory: MemoryManager | None = None,
+        planner: PlatformPlanner | None = None,
+        router: PlatformRouter | None = None,
+        constraints: ConstraintSolver | None = None,
+        simulator: Simulator | None = None,
+        research: ResearchManager | None = None,
+        executor: PlatformExecutor | None = None,
+    ):
         self.storage = StorageManager(storage_root)
-        self.events = EventBus(auto_dispatch=True)
+        self.events = event_bus or EventBus(auto_dispatch=True)
         self.events.start()
 
         self.registry = build_default_registry()
         self.selector = ProviderSelector(self.registry)
         self.resources = ResourceManager()
-
-        self.compiler = DAGCompiler()
-        self.verifier = Verifier()
 
         # execution service: the reference runtime performs the actual
         # state transformations (activation -> Phi gate -> objective -> commit)
@@ -89,7 +105,27 @@ class Kernel:
             build_default_universe(),
             config=RuntimeConfig(output_dir=str(self.storage.root / "world_state" / "runtime")),
         )
-        self.memory = MemoryManager(storage=PlatformStorage(config=SystemConfig()), event_bus=self.events, config=SystemConfig())
+        config = SystemConfig()
+        self.memory = memory or MemoryManager(storage=PlatformStorage(config=config), event_bus=self.events, config=config)
+        # the platform lineage participates in every node: its planner and
+        # simulator annotate the DAG at compile time, its router/executor run
+        # per node, and its constraint solver is a verification stage
+        self.platform_constraints = constraints or ConstraintSolver(config=config)
+        self.platform_router = router or PlatformRouter(memory=self.memory, event_bus=self.events, config=config)
+        self.platform_simulator = simulator or Simulator(constraints=self.platform_constraints, config=config)
+        self.platform_executor = executor or PlatformExecutor(router=self.platform_router, event_bus=self.events, config=config)
+        self.platform_planner = planner or PlatformPlanner(
+            router=self.platform_router,
+            memory=self.memory,
+            constraints=self.platform_constraints,
+            simulator=self.platform_simulator,
+            event_bus=self.events,
+            config=config,
+        )
+        self.research_manager = research or ResearchManager(memory=self.memory, event_bus=self.events, config=config)
+
+        self.compiler = DAGCompiler(platform_planner=self.platform_planner, platform_simulator=self.platform_simulator)
+        self.verifier = Verifier(extra_stages={"platform_constraints": self._platform_constraint_stage})
         self.skill_registry = SkillRegistry()
 
         self.world = WorldState(storage=self.storage)
@@ -186,7 +222,21 @@ class Kernel:
         finally:
             self.resources.release()
 
-        report = self.verifier.verify(output, context={"world_facts": self.world.facts})
+        # platform-lineage pass: route + execute the node as a platform Task
+        # (additive observability; must never change output["status"])
+        task = PlatformTask(
+            name=node.name,
+            capability_required=node.task_type,
+            inputs={"goal": node.goal},
+            estimated_cost=node.metadata.get("predicted_cost_ms", 100.0) / 1000.0,
+        )
+        try:
+            platform_result = self.platform_executor.execute(task)
+            output["platform_execution"] = platform_result.to_dict()
+        except Exception as exc:
+            output["platform_execution"] = {"status": "error", "error": str(exc)}
+
+        report = self.verifier.verify(output, context={"world_facts": self.world.facts, "task": task})
         output["verification"] = report.to_dict()
         self.events.publish(
             type=(EventType.VERIFICATION_PASSED if report.approved else EventType.VERIFICATION_FAILED).value,
@@ -197,6 +247,12 @@ class Kernel:
             self._commit_memory(node, output)
         self._learn_node(node, output, report)
         return output
+
+    def _platform_constraint_stage(self, output: dict[str, Any], context: dict[str, Any]) -> list[str]:
+        task = context.get("task")
+        if task is None or self.platform_constraints.validate(task):
+            return []
+        return [f"platform_constraint:{self.platform_constraints.explain(task)}"]
 
     def _commit_memory(self, node: DAGNode, output: dict[str, Any]) -> None:
         self.memory.store(MemoryEntity(

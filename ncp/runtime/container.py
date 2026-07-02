@@ -35,6 +35,7 @@ class Container:
     config: Config = field(default_factory=Config)
 
     # Subsystems (initialized on build)
+    kernel: Optional["Kernel"] = field(default=None, repr=False)  # noqa: F821 - imported lazily in build()
     event_bus: Optional[EventBus] = field(default=None, repr=False)
     planner: Optional[PlannerInterface] = field(default=None, repr=False)
     router: Optional[RouterInterface] = field(default=None, repr=False)
@@ -119,6 +120,24 @@ class Container:
             config=self.config,
         )
         logger.info("ResearchManager created")
+
+        # 10. Kernel (the unified execution engine; shares this container's
+        # subsystem instances so its activity is observable on this event
+        # bus and memory — Runtime.execute_goal delegates to it)
+        from ncp.kernel.kernel import Kernel
+        self.kernel = Kernel(
+            storage_root=self.config.get("storage.root", "storage"),
+            learning_enabled=self.config.get("learning.enabled", True),
+            event_bus=self.event_bus,
+            memory=self.memory,
+            planner=self.planner,
+            router=self.router,
+            constraints=self.constraints,
+            simulator=self.simulator,
+            research=self.research,
+            executor=self.executor,
+        )
+        logger.info("Kernel created")
 
         logger.info("Container build complete")
         return self

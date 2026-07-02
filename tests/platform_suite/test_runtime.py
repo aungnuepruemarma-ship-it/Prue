@@ -91,6 +91,45 @@ class TestLifecycleManager:
         assert lm.state.status == RuntimeStatus.STOPPED
 
 
+class TestExecuteGoalDelegatesToKernel:
+    def test_container_builds_kernel_sharing_subsystems(self, tmp_path):
+        from ncp.kernel.kernel import Kernel
+
+        config = Config()
+        config.set("storage.root", str(tmp_path / "storage"))
+        container = Container(config=config).build()
+        kernel = container.kernel
+        assert isinstance(kernel, Kernel)
+        # shared instances, not copies — the whole point of the unification
+        assert kernel.events is container.event_bus
+        assert kernel.memory is container.memory
+        assert kernel.platform_planner is container.planner
+        assert kernel.platform_router is container.router
+        assert kernel.platform_executor is container.executor
+        assert kernel.platform_constraints is container.constraints
+        assert kernel.platform_simulator is container.simulator
+        assert kernel.research_manager is container.research
+        kernel.shutdown()
+
+    def test_execute_goal_runs_through_kernel(self, tmp_path):
+        from ncp.core.entities import Goal
+
+        config = Config()
+        config.set("storage.root", str(tmp_path / "storage"))
+        container = Container(config=config).build()
+        runtime = container.get_runtime()
+        runtime.initialize()
+        try:
+            jobs_before = len(container.kernel.world.jobs)
+            results = runtime.execute_goal(Goal(name="update the index", description="update the index"))
+            assert len(container.kernel.world.jobs) == jobs_before + 1
+            assert results, "kernel node results mapped back to platform Results"
+            assert all(r.status in {"success", "partial", "failure"} for r in results)
+        finally:
+            runtime.shutdown()
+            container.kernel.shutdown()
+
+
 class TestRuntime:
     def test_runtime_initialization(self):
         config = Config()

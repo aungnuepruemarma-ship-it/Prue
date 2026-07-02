@@ -8,6 +8,7 @@ dist/
 
 # Generated runtime artifacts
 ncp_output/
+/storage/
 
 # Test / tooling caches
 .pytest_cache/

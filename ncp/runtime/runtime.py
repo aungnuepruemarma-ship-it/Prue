@@ -10,6 +10,7 @@ No global variables.
 
 from dataclasses import dataclass
 from typing import List
+from uuid import uuid4
 
 from ncp.core.entities import Goal, Result, Task
 from ncp.runtime.container import Container
@@ -66,11 +67,12 @@ class Runtime:
         logger.info("Runtime initialized and ready")
 
     def execute_goal(self, goal: Goal) -> List[Result]:
-        """Execute a goal end-to-end.
+        """Execute a goal end-to-end by delegating to the Kernel.
 
         Flow:
-            Goal -> Planner -> Router -> Constraint Engine -> Simulator
-            -> Executor -> Event Bus -> Memory -> Storage
+            Goal -> Kernel.submit -> DAG (platform planner/simulator annotate)
+            -> providers (platform router/executor run per node)
+            -> Verifier (incl. platform constraints) -> Memory -> Results
         """
         if not self._initialized:
             self.initialize()
@@ -78,27 +80,21 @@ class Runtime:
         logger.info("Executing goal: %s", goal.name)
         self._state.tasks_processed += 1
 
-        # 1. Plan
-        plan = self.container.planner.plan(goal)
-        logger.info("Plan created with %d tasks", len(plan))
+        response = self.container.kernel.submit(goal.name, project=None)
 
-        # 2. Execute each task
-        results = []
-        for task in plan:
-            # 3. Route
-            capability = self.container.router.route(task)
-            logger.debug("Task %s routed to %s", task.name, capability.name)
-
-            # 4. Validate constraints
-            if not self.container.constraints.validate(task):
-                logger.warning("Task %s failed constraint validation", task.name)
-                continue
-
-            # 5. Execute
-            result = self.container.executor.execute(task)
+        results: List[Result] = []
+        for node in response.node_results:
+            node_result = node.get("result", {})
+            verification = node_result.get("verification", {})
+            status = "success" if node["status"] == "completed" else ("partial" if node["status"] == "skipped" else "failure")
+            result = Result(
+                task_id=uuid4(),
+                status=status,
+                output=node_result.get("response", ""),
+                error=node_result.get("error"),
+                confidence=verification.get("confidence", 0.0),
+            )
             results.append(result)
-
-            # 6. Store in memory
             self.container.memory.store(result)
 
         logger.info("Goal execution complete: %d results", len(results))
