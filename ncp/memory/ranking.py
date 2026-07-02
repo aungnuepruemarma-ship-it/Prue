@@ -1,10 +1,10 @@
 """Memory ranking - Score items by relevance, confidence, recency, utility."""
 
 from dataclasses import dataclass
-from datetime import datetime
 from typing import List
 
 from ncp.core.entities import Memory
+from ncp.utils.timeutils import utcnow
 
 
 @dataclass
@@ -27,7 +27,7 @@ class MemoryRanker:
         # Recency score (decay over time)
         recency = memory.recency
         if memory.last_accessed:
-            age_hours = (datetime.utcnow() - memory.last_accessed).total_seconds() / 3600
+            age_hours = (utcnow() - memory.last_accessed).total_seconds() / 3600
             recency = max(0.0, 1.0 - age_hours / 168)  # Decay over 1 week
 
         # Utility score (based on access count)

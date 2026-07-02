@@ -1,8 +1,9 @@
 """Compression statistics tracking."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, Dict, List
+
+from ncp.utils.timeutils import utcnow
 
 
 @dataclass
@@ -29,7 +30,7 @@ class CompressionStatistics:
             "compressed_size": compressed_size,
             "ratio": compressed_size / original_size if original_size > 0 else 1.0,
             "fidelity_loss": fidelity_loss,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utcnow().isoformat(),
         })
 
     @property

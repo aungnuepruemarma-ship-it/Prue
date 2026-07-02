@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from ncp.utils.logger import get_logger
+from ncp.utils.timeutils import utcnow
 
 logger = get_logger(__name__)
 
@@ -12,7 +13,7 @@ logger = get_logger(__name__)
 @dataclass
 class AuditEntry:
     """A single audit log entry."""
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=utcnow)
     action: str = ""
     actor: str = ""
     target: str = ""

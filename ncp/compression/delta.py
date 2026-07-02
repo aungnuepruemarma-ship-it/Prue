@@ -4,11 +4,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List
 
+from ncp.utils.timeutils import utcnow
+
 
 @dataclass
 class DeltaEntry:
     """A delta entry recording changes."""
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=utcnow)
     path: str = ""
     old_value: Any = None
     new_value: Any = None

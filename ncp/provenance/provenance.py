@@ -9,6 +9,7 @@ from ncp.provenance.confidence import ConfidenceModel
 from ncp.provenance.evidence import Evidence
 from ncp.provenance.lineage import LineageEntry
 from ncp.provenance.source import Source
+from ncp.utils.timeutils import utcnow
 
 
 @dataclass
@@ -21,14 +22,14 @@ class ProvenanceRecord:
     confidence: ConfidenceModel = field(default_factory=ConfidenceModel)
     lineage: Optional[LineageEntry] = None
     version: int = 1
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utcnow)
+    updated_at: datetime = field(default_factory=utcnow)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def add_evidence(self, evidence: Evidence) -> None:
         """Add evidence to the record."""
         self.evidence.append(evidence)
-        self.updated_at = datetime.utcnow()
+        self.updated_at = utcnow()
 
     def to_dict(self) -> Dict[str, Any]:
         return {

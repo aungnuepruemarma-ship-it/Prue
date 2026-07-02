@@ -6,6 +6,8 @@ from enum import Enum
 from typing import Any, Dict, Optional
 from uuid import UUID, uuid4
 
+from ncp.utils.timeutils import utcnow
+
 
 class EventType(Enum):
     """Standard event types."""
@@ -69,7 +71,7 @@ class Event:
     payload: Dict[str, Any] = field(default_factory=dict)
     source: Optional[str] = None
     priority: int = 0
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=utcnow)
     correlation_id: Optional[UUID] = None
 
     def to_dict(self) -> Dict[str, Any]:

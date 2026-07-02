@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
+from ncp.utils.timeutils import utcnow
+
 
 @dataclass
 class Concept:
@@ -15,8 +17,8 @@ class Concept:
     related_concepts: List[UUID] = field(default_factory=list)
     facts: List[str] = field(default_factory=list)
     confidence: float = 1.0
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utcnow)
+    updated_at: datetime = field(default_factory=utcnow)
     embeddings: Optional[List[float]] = None
 
 
@@ -45,7 +47,7 @@ class SemanticMemory:
             if facts:
                 concept.facts.extend(facts)
             concept.confidence = confidence
-            concept.updated_at = datetime.utcnow()
+            concept.updated_at = utcnow()
             return concept
 
         concept = Concept(

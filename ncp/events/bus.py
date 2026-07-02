@@ -23,12 +23,16 @@ class EventBus:
     Direct module-to-module calls are avoided.
     """
 
-    def __init__(self, queue_size: int = 100000):
+    def __init__(self, queue_size: int = 100000, auto_dispatch: bool = False):
         self._queue = EventQueue(max_size=queue_size)
         self._registry = EventRegistry()
         self._running = False
         self._lock = RLock()
         self._subscribers: Dict[str, int] = {}
+        # auto_dispatch delivers events to subscribers synchronously on
+        # publish (used by the kernel); the default queues events until
+        # process_one()/flush() so producers never re-enter consumers.
+        self._auto_dispatch = auto_dispatch
         logger.info("EventBus initialized (queue_size=%d)", queue_size)
 
     def publish(self, event: Optional[Event] = None, **kwargs) -> bool:
@@ -49,6 +53,9 @@ class EventBus:
         if not self._running:
             logger.warning("EventBus not running, event dropped: %s", event.type)
             return False
+        if self._auto_dispatch:
+            self.dispatch(event)
+            return True
         success = self._queue.put(event)
         if success:
             logger.debug("Published event: %s from %s", event.type, event.source)

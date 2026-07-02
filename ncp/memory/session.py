@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
 from ncp.core.entities import Memory, Result, Task
+from ncp.utils.timeutils import utcnow
 
 
 @dataclass
@@ -14,7 +15,7 @@ class SessionTrace:
     id: UUID = field(default_factory=uuid4)
     task: Optional[Task] = None
     result: Optional[Result] = None
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=utcnow)
     context: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -24,7 +25,7 @@ class SessionMemory:
     session_id: UUID = field(default_factory=uuid4)
     name: str = ""
     traces: List[SessionTrace] = field(default_factory=list)
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utcnow)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def add_trace(self, task: Task, result: Result,

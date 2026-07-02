@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 from uuid import UUID, uuid4
 
 from ncp.core.entities import Memory
+from ncp.utils.timeutils import utcnow
 
 
 @dataclass
@@ -16,7 +17,7 @@ class ArchiveEntry:
     compressed: bool = False
     original_size: int = 0
     compressed_size: int = 0
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utcnow)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 

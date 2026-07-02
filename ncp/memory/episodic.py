@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
 from ncp.core.entities import Result, Task
+from ncp.utils.timeutils import utcnow
 
 
 @dataclass
@@ -17,7 +18,7 @@ class Episode:
     input_data: Dict[str, Any] = field(default_factory=dict)
     output_data: Dict[str, Any] = field(default_factory=dict)
     transitions: List[str] = field(default_factory=list)
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=utcnow)
     duration_ms: float = 0.0
     success: bool = True
     metadata: Dict[str, Any] = field(default_factory=dict)

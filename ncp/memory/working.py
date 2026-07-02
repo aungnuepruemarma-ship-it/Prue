@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import Deque, Dict, List
 
 from ncp.core.entities import Entity
+from ncp.utils.timeutils import utcnow
 
 
 @dataclass
@@ -30,7 +31,7 @@ class WorkingMemory:
             self._buffer.popleft()
         self._buffer.append(item)
         self._sequence += 1
-        self._timestamps[self._sequence] = datetime.utcnow()
+        self._timestamps[self._sequence] = utcnow()
 
     def get_recent(self, n: int = 10) -> List[Entity]:
         """Get n most recent items."""
@@ -47,11 +48,11 @@ class WorkingMemory:
 
     def cleanup_expired(self) -> int:
         """Remove expired items. Returns count removed."""
-        cutoff = datetime.utcnow() - timedelta(seconds=self.ttl_seconds)
+        cutoff = utcnow() - timedelta(seconds=self.ttl_seconds)
         removed = 0
         while self._buffer:
             oldest_seq = min(self._timestamps.keys()) if self._timestamps else None
-            if oldest_seq and self._timestamps.get(oldest_seq, datetime.utcnow()) < cutoff:
+            if oldest_seq and self._timestamps.get(oldest_seq, utcnow()) < cutoff:
                 self._buffer.popleft()
                 del self._timestamps[oldest_seq]
                 removed += 1

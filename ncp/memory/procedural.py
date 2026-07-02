@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
+from ncp.utils.timeutils import utcnow
+
 
 @dataclass
 class Workflow:
@@ -17,8 +19,8 @@ class Workflow:
     success_count: int = 0
     failure_count: int = 0
     avg_execution_time_ms: float = 0.0
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utcnow)
+    updated_at: datetime = field(default_factory=utcnow)
     tags: List[str] = field(default_factory=list)
 
 

@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
+from ncp.utils.timeutils import utcnow
+
 
 @dataclass
 class Node:
@@ -20,8 +22,8 @@ class Node:
     provenance_id: Optional[UUID] = None
     confidence: float = 1.0
     version: int = 1
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utcnow)
+    updated_at: datetime = field(default_factory=utcnow)
     tags: List[str] = field(default_factory=list)
     embedding: Optional[List[float]] = None
 
@@ -43,4 +45,4 @@ class Node:
     def update_confidence(self, new_confidence: float) -> None:
         """Update node confidence."""
         self.confidence = max(0.0, min(1.0, new_confidence))
-        self.updated_at = datetime.utcnow()
+        self.updated_at = utcnow()

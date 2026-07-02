@@ -17,6 +17,7 @@ from ncp.events.bus import EventBus
 from ncp.events.event import Event, EventType
 from ncp.runtime.state import RuntimeState, RuntimeStatus
 from ncp.utils.logger import get_logger
+from ncp.utils.timeutils import utcnow
 
 logger = get_logger(__name__)
 
@@ -41,7 +42,7 @@ class LifecycleManager:
 
         logger.info("Startup complete")
         self.state.status = RuntimeStatus.RUNNING
-        self.state.start_time = __import__("datetime").datetime.utcnow()
+        self.state.start_time = utcnow()
 
     def shutdown(self) -> None:
         """Execute graceful shutdown."""

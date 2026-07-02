@@ -4,8 +4,6 @@ import json
 from dataclasses import asdict, is_dataclass
 from typing import Any, Dict
 
-from ncp.core.entities import Entity
-
 
 class Serializer:
     """JSON serializer for NCP entities."""
@@ -23,6 +21,7 @@ class Serializer:
     @staticmethod
     def to_dict(obj: Any) -> Dict[str, Any]:
         """Convert object to dictionary."""
+        from ncp.core.entities import Entity  # deferred: utils must not depend on core at import time
         if isinstance(obj, Entity):
             return obj.to_dict()
         if is_dataclass(obj):

@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
+from ncp.utils.timeutils import utcnow
+
 
 @dataclass
 class LineageEntry:
@@ -13,7 +15,7 @@ class LineageEntry:
     parent_id: Optional[UUID] = None
     child_ids: List[UUID] = field(default_factory=list)
     operation: str = ""  # "created", "modified", "derived", "merged"
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=utcnow)
     description: str = ""
 
 

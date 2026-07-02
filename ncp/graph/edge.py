@@ -6,6 +6,8 @@ from enum import Enum
 from typing import Any, Dict
 from uuid import UUID, uuid4
 
+from ncp.utils.timeutils import utcnow
+
 
 class EdgeType(Enum):
     """Types of relationships between nodes."""
@@ -32,7 +34,7 @@ class Edge:
     weight: float = 1.0
     metadata: Dict[str, Any] = field(default_factory=dict)
     bidirectional: bool = False
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utcnow)
     confidence: float = 1.0
 
     def to_dict(self) -> Dict[str, Any]:

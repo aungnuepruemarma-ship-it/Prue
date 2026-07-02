@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
+from ncp.utils.timeutils import utcnow
+
 
 @dataclass
 class Entity:
@@ -17,7 +19,7 @@ class Entity:
     name: str = ""
     description: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utcnow)
     version: str = "1.0"
     provenance_id: Optional[UUID] = None
 
@@ -223,7 +225,7 @@ class State:
     """System state representation."""
     name: str = ""
     variables: Dict[str, Any] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=utcnow)
 
     def to_dict(self) -> Dict[str, Any]:
         return {

@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
 
+from ncp.utils.timeutils import utcnow
+
 
 @dataclass
 class VersionedItem:
@@ -13,5 +15,5 @@ class VersionedItem:
     version: int = 1
     previous_version: Optional[UUID] = None
     content_hash: str = ""
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utcnow)
     change_summary: str = ""

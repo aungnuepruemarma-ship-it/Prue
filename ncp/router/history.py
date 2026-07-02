@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Any, Dict, List
 from uuid import UUID
 
+from ncp.utils.timeutils import utcnow
+
 
 @dataclass
 class RoutingDecision:
@@ -14,7 +16,7 @@ class RoutingDecision:
     success: bool = True
     latency_ms: float = 0.0
     cost: float = 0.0
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=utcnow)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 

@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from ncp.utils.timeutils import utcnow
+
 
 @dataclass
 class SnapshotStore:
@@ -16,7 +18,7 @@ class SnapshotStore:
         """Create snapshot."""
         import copy
         self.snapshots[name] = copy.deepcopy(data)
-        self.timestamps[name] = datetime.utcnow()
+        self.timestamps[name] = utcnow()
 
     def restore(self, name: str) -> Optional[Dict[str, Any]]:
         """Restore snapshot."""
