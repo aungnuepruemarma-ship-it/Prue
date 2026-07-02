@@ -1,0 +1,7 @@
+routing:
+  default_policy: adaptive
+  exploration_rate: 0.1
+  confidence_threshold: 0.7
+  latency_weight: 0.3
+  cost_weight: 0.3
+  quality_weight: 0.4

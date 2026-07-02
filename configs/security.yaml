@@ -1,0 +1,10 @@
+security:
+  encryption:
+    enabled: true
+    algorithm: AES-256-GCM
+  auth:
+    type: jwt
+    token_ttl_seconds: 3600
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 100

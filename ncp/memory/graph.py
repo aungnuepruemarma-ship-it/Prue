@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..core.universe import Universe
-from ..graph.graph import Graph
+from ..graph.simple import SimpleGraph as Graph
 
 
 @dataclass

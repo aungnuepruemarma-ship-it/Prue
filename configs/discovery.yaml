@@ -1,0 +1,6 @@
+discovery:
+  auto_discovery: true
+  scan_interval_seconds: 60
+  health_check:
+    enabled: true
+    interval_seconds: 30

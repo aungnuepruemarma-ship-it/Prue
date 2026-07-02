@@ -1,5 +1,5 @@
 from ncp.core.runtime import Runtime, build_default_universe
-from ncp.utils.config import Config
+from ncp.utils.runtime_config import Config
 
 
 def test_runtime_step_accepts_some_candidate(runtime):

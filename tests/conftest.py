@@ -10,7 +10,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ncp.core.runtime import Runtime, build_default_universe  # noqa: E402
-from ncp.utils.config import Config  # noqa: E402
+from ncp.utils.runtime_config import Config  # noqa: E402
 
 
 @pytest.fixture

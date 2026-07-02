@@ -1,0 +1,5 @@
+benchmark:
+  output_dir: benchmarks/results
+  warmup_iterations: 3
+  iterations: 10
+  timeout_seconds: 60

@@ -1,0 +1,10 @@
+storage:
+  default_backend: sqlite
+  sqlite:
+    path: data/ncp.db
+  postgresql:
+    host: localhost
+    port: 5432
+    database: ncp
+    user: ncp
+    password: ncp

@@ -1,0 +1,32 @@
+memory:
+  working:
+    max_items: 1024
+    ttl_seconds: 300
+  session:
+    max_sessions: 100
+    ttl_seconds: 3600
+  episodic:
+    max_episodes: 10000
+    index_type: vector
+  semantic:
+    max_concepts: 5000
+    similarity_threshold: 0.85
+  procedural:
+    max_workflows: 1000
+  skill:
+    max_skills: 500
+    min_confidence: 0.7
+  archive:
+    compression_enabled: true
+    retention_days: 90
+  retrieval:
+    top_k: 10
+    multi_scale: true
+  consolidation:
+    enabled: true
+    replay_count: 5
+    interval_seconds: 300
+  forgetting:
+    enabled: true
+    decay_rate: 0.01
+    importance_threshold: 0.3

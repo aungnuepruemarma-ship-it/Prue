@@ -74,3 +74,23 @@ def test_skill_candidate_is_admissible_and_executable(runtime):
     version_before = runtime.universe.version
     cand.apply(runtime.universe)
     assert runtime.universe.version > version_before
+
+
+def test_pattern_skills_bridge_to_platform_registry(runtime):
+    from ncp.memory.skills import Skill
+    from ncp.skills.bridge import sync_library_to_registry
+    from ncp.skills.registry import SkillRegistry
+
+    runtime.learn_skill(Skill(
+        name="skill_update_entity_query_memory",
+        pattern=("update_entity", "query_memory"),
+        description="update then recall",
+        metadata={"support": 3},
+    ))
+    registry = SkillRegistry()
+    added = sync_library_to_registry(runtime.skills, registry)
+    assert added == 1
+    platform_skill = registry.find_by_name("skill_update_entity_query_memory")[0]
+    assert platform_skill.trigger_patterns == ["update_entity", "query_memory"]
+    assert platform_skill.success_count == 3
+    assert sync_library_to_registry(runtime.skills, registry) == 0, "idempotent"

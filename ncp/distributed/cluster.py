@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 
 from ..api.protocol import TaskRequest, TaskResponse, handle_request
 from ..core.runtime import Runtime, build_default_universe
-from ..utils.config import Config
 from ..utils.ids import new_id
+from ..utils.runtime_config import Config
 
 
 @dataclass

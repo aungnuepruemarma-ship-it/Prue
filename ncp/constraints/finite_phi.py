@@ -5,7 +5,7 @@ from typing import Callable
 
 from ..core.transformations import TransformationCandidate
 from ..core.universe import Universe
-from ..utils.config import Config
+from ..utils.runtime_config import Config
 from .explanation import explain_violations
 
 KNOWN_TASK_TYPES = {"create", "update", "merge", "relate", "research", "plan", "skill", "query"}

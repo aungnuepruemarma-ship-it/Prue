@@ -1,7 +1,7 @@
 from ncp.api.protocol import TaskRequest, handle_request
 from ncp.core.runtime import Runtime, build_default_universe
 from ncp.distributed.cluster import Cluster
-from ncp.utils.config import Config
+from ncp.utils.runtime_config import Config
 
 
 def test_handle_request_drives_runtime(tmp_path):

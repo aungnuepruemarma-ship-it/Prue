@@ -16,7 +16,7 @@ from ..planning.planner import Planner
 from ..research.engine import ResearchEngine
 from ..routing.router import CapabilityRouter
 from ..storage.json_store import JsonStore
-from ..utils.config import Config
+from ..utils.runtime_config import Config
 from ..world_model.model import WorldModel
 from .activation import ActivationEngine
 from .transformations import (

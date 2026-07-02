@@ -2,7 +2,7 @@ from ncp.constraints.finite_phi import FinitePhiChecker
 from ncp.core.runtime import build_default_universe
 from ncp.core.transformations import TransformationCandidate, make_add_relation, make_update_entity
 from ncp.core.universe import Relation
-from ncp.utils.config import Config
+from ncp.utils.runtime_config import Config
 
 
 def valid_update():
