@@ -58,3 +58,22 @@ Built on the merged core exactly per the phase spec, stdlib-backed (sqlite3 / fi
 - **219 tests**, all passing; ruff clean; connectivity test enforces no empty or orphaned modules across all 40 subpackages.
 - Zero required dependencies; extras: `[dev]`, `[api]`, `[config]`, `[llm]`.
 - Three entry points: `Runtime` (reference loop), `python -m ncp.cli.main --demo` / `PlatformRuntime` (platform spine), and `Kernel.submit()` (the AI-OS pipeline that composes both).
+
+## 7. Phase 11 — Full unification (one true call graph)
+
+A definitive call-reachability audit (code-read, not trace-based) confirmed the merge had produced **two working pipelines that never called each other**: CLI/API → platform `Container`/`Runtime`/`Planner`/`Router`, and `Kernel.submit()` → reference runtime + Phase 6–10 layer — with roughly 35–40 real, individually-tested modules (provenance, compression, coding, simulator, most of research/graph/skills, workers, the platform's own planner/router/executor) unreachable from any production entry point. Phase 11 removed the split:
+
+- **One engine**: `Container.build()` constructs the `Kernel` sharing its own event bus, memory, planner, router, constraints, simulator, executor, and research instances; `PlatformRuntime.execute_goal()` delegates to `Kernel.submit()`. CLI and API are unchanged callers.
+- **Platform lineage in every node**: the DAG compiler annotates each sub-goal with the platform planner's plan score and the simulator's outcome prediction; each node is additionally routed and executed as a platform `Task`; the `ConstraintSolver` runs as an extra verification stage.
+- **Provenance + audit**: every committed memory carries a persisted `ProvenanceRecord` (source, evidence, confidence), a lineage entry, and an audit-trail row.
+- **Vector memory** (user-requested): `memory/embedding.py` provides stdlib feature-hashing embeddings (word + char-trigram, L2-normalized); every stored item lands in the `VectorStore`; retrieval adds a similarity-thresholded vector stage; embeddings persist via the storage `vectors/` slot.
+- **Research & coding node types**: research nodes run the discovery loop (evidence-corroborated hypotheses enter semantic memory); build-focused nodes run generate → verify → optimize → benchmark and save the best candidate as a code artifact.
+- **Skills, workers, events**: episode-based skill extraction + evolution in `Kernel.run_maintenance()` (every 10th run: skills, graph compression, backups); consolidation/cleanup workers dispatched on `TASK_FINISHED` via `EventDispatcher`; all kernel events go through `EventPublisher` with `EventPriority` triage.
+- **Knowledge graph**: `MemoryManager` mirrors every item into a live `Graph` + `GraphIndex` (typed nodes, temporal edges); `RetrievalEngine.retrieve` is genuinely called; kernel exposes `graph_report/graph_traverse/graph_merge/graph_split/graph_expand`.
+- **Recovery is automatic**: the kernel diagnoses interrupted runs at boot and auto-resumes them; checkpoints also get a compressed artifact copy.
+- **Cluster on the kernel**: each distributed node owns a `Kernel`; `api/protocol.py` gains `handle_kernel_request`.
+- **The guard**: `tests/test_call_reachability.py` patches 33 previously-dead methods with counting spies (`autospec` + original `side_effect`) and drives one full kernel lifecycle — every target must be called. Import-only connectivity can no longer mask a disconnected module.
+
+Latent bugs surfaced and fixed by the wiring: `ResearchManager`'s in-function `Memory` import (broke isinstance routing after module reloads), `MemoryManager._store_episodic` double-appending episodes and never marking them successful (starved the skill extractor), `split_by_clustering` calling a method that only exists on `QueryEngine`, and the discovery gate being unpassable (hypotheses spawned below the verification threshold with no way to gain confidence).
+
+**Current state: 293 tests, ruff clean, sandbox-verified (clean checkout → fresh venv → suite → CLI demo → kernel E2E → maintenance → crash/auto-resume drill).**

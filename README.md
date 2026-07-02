@@ -13,6 +13,13 @@ AI-OS layer on top:
   provider-independent verification, world state, learning engine, and
   crash recovery.
 
+Phase 11 unified the two lineages into **one call graph**: the CLI/API
+delegate to the kernel, the kernel drives the platform planner/router/
+executor/constraints per node, and a call-reachability test proves that
+33 previously-standalone methods (provenance, compression, vector memory,
+research, coding, skills evolution, workers, graph analytics, recovery)
+are genuinely invoked by every kernel lifecycle.
+
 Everything runs on the standard library; optional extras add the HTTP API
 (`[api]`), YAML configs (`[config]`), and the Anthropic-backed reasoner
 (`[llm]`, or just set `ANTHROPIC_API_KEY` — the stdlib transport is built in).
@@ -21,7 +28,7 @@ Everything runs on the standard library; optional extras add the HTTP API
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                      # 219 tests
+pytest -q                      # 293 tests
 python -m experiments.demo     # reference runtime + cluster + kernel
 python -m ncp.cli.main --demo  # platform spine (goal -> plan -> route -> execute)
 ```
@@ -74,7 +81,15 @@ pluggable for PostgreSQL/Qdrant/Neo4j (declared in `docker-compose.yml`).
 - **NCP remembers projects, not chats** — world state (projects, goals,
   jobs, sessions) persists across restarts.
 - **No empty modules, no orphans** — a connectivity test enforces that all
-  40 subpackages are non-empty and reachable from the entry points.
+  40 subpackages are non-empty and reachable from the entry points, and
+  `tests/test_call_reachability.py` proves 33 key methods across every
+  subsystem are *called* (not just imported) during a kernel lifecycle.
+- **Vector memory** — every stored item is embedded (stdlib feature-hashing:
+  word + character-trigram features, L2-normalized) into a cosine-similarity
+  vector store; retrieval finds paraphrases keyword search misses, and
+  embeddings persist across restarts.
+- **Self-healing boot** — the kernel diagnoses interrupted runs at startup
+  and auto-resumes them (`startup_report_summary()`).
 
 ## Documentation
 
