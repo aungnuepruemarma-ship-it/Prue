@@ -16,6 +16,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from ncp.coding import CodeBenchmark, CodeGenerator, CodeOptimizer, CodeVerifier
 from ncp.compression.manager import CompressionManager
 from ncp.constraints.solver import ConstraintSolver
 from ncp.core.entities import Memory as MemoryEntity
@@ -143,6 +144,13 @@ class Kernel:
         self.lineage = LineageTracker()
         self.audit = AuditTrail()
         self.compression = CompressionManager()
+
+        # coding pipeline: build-focused execute nodes generate, verify,
+        # optimize, and benchmark code candidates
+        self.code_generator = CodeGenerator()
+        self.code_verifier = CodeVerifier()
+        self.code_optimizer = CodeOptimizer()
+        self.code_benchmark = CodeBenchmark()
 
         # vector memory survives restarts via the storage vectors/ slot
         persisted_vectors = self.storage.load_document("vectors", "memory_embeddings")
@@ -287,6 +295,20 @@ class Kernel:
         related = self.memory.retrieve(node.goal, top_k=3)
         output["related_memories"] = [m.content for m in related]
 
+        # research nodes run the discovery loop (hypothesis -> verify ->
+        # semantic memory); build-focused execute nodes run the coding pipeline
+        if node.task_type == "research":
+            evidence = output["related_memories"] + [
+                f"{key}={value}" for key, value in list(self.world.facts.items())[:3]
+            ]
+            discoveries = self.research_manager.discover({
+                "observation": node.goal,
+                "evidence": evidence,
+            })
+            output["discoveries"] = [d.statement for d in discoveries]
+        if node.task_type == "execute" and node.metadata.get("focus") == "code":
+            output["coding"] = self._run_coding_pipeline(node)
+
         # platform-lineage pass: route + execute the node as a platform Task
         # (additive observability; must never change output["status"])
         task = PlatformTask(
@@ -315,6 +337,29 @@ class Kernel:
         # reporting can read them back without re-walking the DAG
         self.storage.objects.store(node.id, json.dumps(output, default=str).encode("utf-8"))
         return output
+
+    def _run_coding_pipeline(self, node: DAGNode) -> dict[str, Any]:
+        """Generate -> verify -> optimize -> benchmark; best code becomes an artifact."""
+        candidates = self.code_generator.generate_alternatives(node.goal)
+        verified = self.code_verifier.verify_all(candidates)
+        summary: dict[str, Any] = {
+            "candidates": len(candidates),
+            "verified": len(verified),
+            "best_score": 0.0,
+        }
+        if not verified:
+            return summary
+        optimized = [self.code_optimizer.optimize(candidate) for candidate in verified]
+        results = self.code_benchmark.compare(optimized)
+        best = max(results, key=lambda r: r.score)
+        best_candidate = next(c for c in optimized if str(c.id) == best.candidate_id)
+        artifact = self.storage.artifacts.save(f"{node.id}.py", best_candidate.code, category="code")
+        summary.update({
+            "best_score": best.score,
+            "best_time_ms": best.execution_time_ms,
+            "artifact": str(artifact),
+        })
+        return summary
 
     def _platform_constraint_stage(self, output: dict[str, Any], context: dict[str, Any]) -> list[str]:
         task = context.get("task")

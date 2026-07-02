@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
+from ncp.core.entities import Memory
 from ncp.events.bus import EventBus
 from ncp.interfaces.research import ResearchInterface
 from ncp.memory.manager import MemoryManager
@@ -38,18 +39,23 @@ class ResearchManager(ResearchInterface):
         """Run discovery loop."""
         logger.info("Running discovery with context: %s", context)
 
-        # Generate hypothesis from context
+        # Generate hypothesis from context; supporting evidence supplied by
+        # the caller (memories, world facts) strengthens its confidence, so
+        # only corroborated hypotheses can clear the verification gate
         if "observation" in context:
             hyp = self.discovery.generate_hypothesis(
                 context["observation"], context
             )
+            evidence = [str(e) for e in context.get("evidence", []) if e]
+            if evidence:
+                hyp.evidence.extend(evidence)
+                hyp.confidence = min(0.9, hyp.confidence + 0.1 * len(evidence))
 
         # Run discovery
         discoveries = self.discovery.discover(context)
 
         # Store verified discoveries in memory
         for hyp in discoveries:
-            from ncp.core.entities import Memory
             self.memory.store(Memory(
                 content=hyp.statement,
                 memory_type="semantic",

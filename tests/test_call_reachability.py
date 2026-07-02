@@ -37,6 +37,14 @@ TARGETS = [
     ("ncp.storage.object_store", "ObjectStore", "store"),
     ("ncp.storage.cache", "CacheStore", "set"),
     ("ncp.memory.manager", "MemoryManager", "retrieve"),
+    # Chunk 3 — research and coding node types
+    ("ncp.research.manager", "ResearchManager", "discover"),
+    ("ncp.research.discovery", "DiscoveryEngine", "discover"),
+    ("ncp.research.verification", "VerificationEngine", "verify"),
+    ("ncp.coding.generator", "CodeGenerator", "generate_alternatives"),
+    ("ncp.coding.verifier", "CodeVerifier", "verify_all"),
+    ("ncp.coding.optimizer", "CodeOptimizer", "optimize"),
+    ("ncp.coding.benchmark", "CodeBenchmark", "compare"),
 ]
 
 GOAL = "research task routing, then build a helper and update the index"

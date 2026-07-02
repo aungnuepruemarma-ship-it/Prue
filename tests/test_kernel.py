@@ -1,3 +1,4 @@
+from ncp.core.entities import Memory
 from ncp.events.event import EventType
 from ncp.kernel import Kernel
 
@@ -180,6 +181,60 @@ def test_kernel_vector_memory_survives_restart(tmp_path):
         assert stored_keys <= set(reborn.memory.vectors.vectors), "embeddings reloaded from storage"
     finally:
         reborn.shutdown()
+
+
+def test_kernel_research_node_type(tmp_path):
+    """Research nodes run the discovery loop; corroborated hypotheses become
+    semantic memory."""
+    kernel = make_kernel(tmp_path)
+    try:
+        # seed corroborating knowledge so the verification gate can pass
+        for text in [
+            "provider routing prefers historically reliable providers",
+            "routing strategies balance provider cost and latency",
+        ]:
+            kernel.memory.store(Memory(content=text, memory_type="semantic", name=text[:24]))
+        before = kernel.memory.semantic.concept_count
+
+        response = kernel.submit("research provider routing strategies")
+        research_nodes = [n for n in response.node_results if n["task_type"] == "research"]
+        assert research_nodes, "research goal compiles to research nodes"
+        assert any(n["result"].get("discoveries") for n in research_nodes), \
+            "corroborated hypotheses were verified"
+        assert kernel.memory.semantic.concept_count > before, \
+            "verified discoveries entered semantic memory"
+    finally:
+        kernel.shutdown()
+
+
+def test_kernel_research_uncorroborated_hypotheses_rejected(tmp_path):
+    """Without supporting evidence the discovery gate stays closed."""
+    kernel = make_kernel(tmp_path)
+    try:
+        response = kernel.submit("research quantum blorpography")
+        research_nodes = [n for n in response.node_results if n["task_type"] == "research"]
+        assert research_nodes
+        assert not any(n["result"].get("discoveries") for n in research_nodes)
+    finally:
+        kernel.shutdown()
+
+
+def test_kernel_coding_node_type(tmp_path):
+    """Build goals run generate -> verify -> optimize -> benchmark and save
+    the best candidate as a code artifact."""
+    kernel = make_kernel(tmp_path)
+    try:
+        response = kernel.submit("build a small parsing tool")
+        exec_nodes = [n for n in response.node_results if n["task_type"] == "execute"]
+        assert exec_nodes, "build goal compiles to an execute node"
+        coding = [n["result"]["coding"] for n in exec_nodes if n["result"].get("coding")]
+        assert coding, "code-focused execute nodes ran the coding pipeline"
+        assert coding[0]["candidates"] >= 1
+        assert coding[0]["verified"] >= 1
+        assert coding[0]["best_score"] > 0
+        assert kernel.storage.artifacts.list_artifacts("code"), "best candidate saved as artifact"
+    finally:
+        kernel.shutdown()
 
 
 def test_resource_manager_limits():
