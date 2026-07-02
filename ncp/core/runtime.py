@@ -57,12 +57,20 @@ class Runtime:
         self.research = ResearchEngine()
         self._persisted_events = 0
 
-    def propose_candidates(self, goal: str, task_hints: list[str] | None = None) -> list[TransformationCandidate]:
+    def propose_candidates(
+        self,
+        goal: str,
+        task_hints: list[str] | None = None,
+        reasoner: str | None = None,
+    ) -> list[TransformationCandidate]:
         active = self.activation.score(self.universe, goal)
         candidates: list[TransformationCandidate] = []
         seen_names: set[str] = set()
         for hint in task_hints or [None]:
-            routed = self.router.route(goal=goal, universe=self.universe, active_entity_ids=active.active_entity_ids, task_hint=hint)
+            if reasoner is not None:
+                routed = self.router.route_via(reasoner, goal, self.universe, active.active_entity_ids)
+            else:
+                routed = self.router.route(goal=goal, universe=self.universe, active_entity_ids=active.active_entity_ids, task_hint=hint)
             for candidate in routed:
                 if candidate.name not in seen_names:
                     seen_names.add(candidate.name)
@@ -99,11 +107,11 @@ class Runtime:
             ))
         return out
 
-    def step(self, goal: str) -> RuntimeResult:
+    def step(self, goal: str, reasoner: str | None = None) -> RuntimeResult:
         self.diagnostics.increment("steps")
         plan = self.planner.plan(goal, self.universe)
         ir = compile_plan(plan)
-        candidates = self.propose_candidates(goal, task_hints=ir.task_hints())
+        candidates = self.propose_candidates(goal, task_hints=ir.task_hints(), reasoner=reasoner)
         if not candidates:
             return RuntimeResult(status="no_candidates", chosen=None, explanation="No candidates were produced.",
                                  summary={"plan": plan, "ir": ir.to_dict()})

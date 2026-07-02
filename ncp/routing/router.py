@@ -80,5 +80,15 @@ class CapabilityRouter:
         task_hint: str | None = None,
     ) -> list[TransformationCandidate]:
         card = self.select_card(goal, task_hint)
-        reasoner = self.reasoners.get(card.metadata.get("reasoner", "rule"), self.reasoners["rule"])
+        return self.route_via(card.metadata.get("reasoner", "rule"), goal, universe, active_entity_ids)
+
+    def route_via(
+        self,
+        reasoner_key: str,
+        goal: str,
+        universe: Universe,
+        active_entity_ids: list[str],
+    ) -> list[TransformationCandidate]:
+        """Route through an explicitly chosen reasoner (kernel provider selection)."""
+        reasoner = self.reasoners.get(reasoner_key, self.reasoners["rule"])
         return reasoner.propose(goal, universe, active_entity_ids)

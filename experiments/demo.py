@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ncp.core.runtime import Runtime, build_default_universe
 from ncp.distributed.cluster import Cluster
+from ncp.kernel import Kernel
 
 
 def run_single_runtime() -> None:
@@ -32,9 +33,22 @@ def run_cluster() -> None:
         response = cluster.submit(goal)
         print(f"  {response.result.get('node')}: goal={goal!r} status={response.status} chosen={response.result.get('chosen', {})}")
 
+def run_kernel() -> None:
+    print("=" * 80)
+    print("KERNEL: goal -> DAG -> providers -> verification -> memory -> response")
+    kernel = Kernel(storage_root="ncp_output/kernel_storage")
+    response = kernel.submit("research task routing, then create a summary and update the index", project="demo")
+    print(f"  status={response.status} verified={response.verified} confidence={response.confidence:.2f}")
+    for line in response.response.splitlines():
+        print(" ", line)
+    print("  stats:", kernel.stats())
+    kernel.shutdown()
+
+
 def main() -> None:
     run_single_runtime()
     run_cluster()
+    run_kernel()
 
 if __name__ == "__main__":
     main()

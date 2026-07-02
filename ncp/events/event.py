@@ -58,6 +58,29 @@ class EventType(Enum):
     RESEARCH_VERIFIED = "research.verified"
     RESEARCH_PUBLISHED = "research.published"
 
+    # Kernel / tasks
+    TASK_STARTED = "task.started"
+    TASK_FINISHED = "task.finished"
+    TASK_FAILED = "task.failed"
+
+    # Models / plugins
+    MODEL_LOADED = "model.loaded"
+    MODEL_UNLOADED = "model.unloaded"
+    PLUGIN_LOADED = "plugin.loaded"
+
+    # Memory / skills
+    MEMORY_LOADED = "memory.loaded"
+    SKILL_EXECUTED = "skill.executed"
+
+    # Verification
+    VERIFICATION_PASSED = "verification.passed"
+    VERIFICATION_FAILED = "verification.failed"
+
+    # Recovery
+    CHECKPOINT_SAVED = "checkpoint.saved"
+    RECOVERY_STARTED = "recovery.started"
+    RECOVERY_COMPLETED = "recovery.completed"
+
 
 @dataclass
 class Event:
